@@ -847,12 +847,15 @@ export function generateMotionGraphicHTML(input) {
         }, 0);
 
         // Kinetic text reveal
-        sceneTL.fromTo(
-          ".word-inner",
-          { y: "115%", opacity: 0, rotateZ: 3 },
-          { y: "0%", opacity: 1, rotateZ: 0, duration: 0.45, stagger: 0.07, ease: "back.out(1.4)" },
-          0.05
-        );
+        const wordInners = document.querySelectorAll(".word-inner");
+        if (wordInners.length > 0) {
+          sceneTL.fromTo(
+            wordInners,
+            { y: "115%", opacity: 0, rotateZ: 3 },
+            { y: "0%", opacity: 1, rotateZ: 0, duration: 0.45, stagger: 0.07, ease: "back.out(1.4)" },
+            0.05
+          );
+        }
 
         // Choreograph theme-specific graphics per scene
         choreographThemeScene(CUES.tabId, sceneTL, sc.idx, sc.duration);

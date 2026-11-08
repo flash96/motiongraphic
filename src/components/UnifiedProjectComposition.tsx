@@ -1,7 +1,7 @@
 import React from 'react';
 import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, spring, interpolate, Audio, staticFile } from 'remotion';
 import { UnifiedProject, ProjectScene, ProjectElement, ElementAnimation } from '../data/types';
-import { SlashTransition } from './common/Transition';
+import { SlashTransition, FadeTransition, SlideTransition } from './common/Transition';
 import { BrandLogo } from './common/Logo';
 // @ts-ignore
 import { renderSvgComponent } from '../../shared-svg-library.js';
@@ -90,6 +90,13 @@ const ElementRenderer: React.FC<{
   const animStyle = useElementAnimation(element.animation);
   const { type, content, position, size, zIndex, styling, props } = element;
 
+  const baseOpacity = element.opacity !== undefined ? element.opacity : 1;
+  const finalOpacity = (animStyle.opacity ?? 1) * baseOpacity;
+  const elemRotation = element.rotation ? `rotate(${element.rotation}deg)` : '';
+  const elemScale = (element.scale !== undefined && element.scale !== 1) ? `scale(${element.scale})` : '';
+  const animTransform = animStyle.transform && animStyle.transform !== 'none' ? animStyle.transform : '';
+  const finalTransform = [animTransform, elemScale, elemRotation].filter(Boolean).join(' ') || 'none';
+
   const baseStyle: React.CSSProperties = {
     position: 'absolute',
     left: position.x,
@@ -98,7 +105,8 @@ const ElementRenderer: React.FC<{
     height: size.height,
     zIndex: zIndex || 1,
     transformOrigin: 'center center',
-    ...animStyle,
+    opacity: finalOpacity,
+    transform: finalTransform,
   };
 
   if (type === 'logo') {
@@ -352,12 +360,102 @@ const ElementRenderer: React.FC<{
   );
 };
 
+// Word-level karaoke subtitle renderer
+const SceneCaptionsRenderer: React.FC<{
+  captions?: ProjectScene['captions'];
+  fps: number;
+}> = ({ captions, fps }) => {
+  const frame = useCurrentFrame();
+  if (!captions || captions.enabled === false || !Array.isArray(captions.segments) || captions.segments.length === 0) {
+    return null;
+  }
+
+  const currentSec = frame / fps;
+  const activeSegment = captions.segments.find(
+    (seg) => currentSec >= seg.start && currentSec <= (seg.end + 0.3)
+  ) || (captions.segments.length > 0 && currentSec >= captions.segments[captions.segments.length - 1].end ? captions.segments[captions.segments.length - 1] : null);
+
+  if (!activeSegment) {
+    return null;
+  }
+
+  const style = captions.style || {};
+  const isTop = style.position === 'top';
+  const isCenter = style.position === 'center';
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 60,
+        right: 60,
+        bottom: isTop ? undefined : (isCenter ? '45%' : 150),
+        top: isTop ? 180 : undefined,
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 50,
+        pointerEvents: 'none',
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: style.backgroundColor || 'rgba(10, 14, 24, 0.88)',
+          borderRadius: 16,
+          padding: '12px 28px',
+          maxWidth: '92%',
+          textAlign: (style.textAlign as any) || 'center',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.75)',
+          border: '1px solid rgba(240, 165, 0, 0.25)',
+        }}
+      >
+        <span
+          style={{
+            fontFamily: style.fontFamily || "'Inter', sans-serif",
+            fontSize: style.fontSize || 34,
+            fontWeight: 800,
+            lineHeight: 1.3,
+            letterSpacing: 0.5,
+          }}
+        >
+          {activeSegment.words.map((w, wIdx) => {
+            const isActive = currentSec >= w.start && currentSec <= w.end;
+            const isSpoken = currentSec > w.end;
+            const activeColor = style.highlightColor || '#f0a500';
+            const textColor = style.textColor || '#ffffff';
+            const spokenColor = 'rgba(255, 255, 255, 0.75)';
+
+            return (
+              <span
+                key={wIdx}
+                style={{
+                  display: 'inline-block',
+                  margin: '0 4px',
+                  color: isActive ? activeColor : (isSpoken ? spokenColor : textColor),
+                  textShadow: isActive
+                    ? (style.activeGlow || `0 0 16px ${activeColor}`)
+                    : (style.textShadow || '0 2px 8px rgba(0, 0, 0, 0.9)'),
+                  transform: isActive ? 'scale(1.08)' : 'scale(1)',
+                  transition: 'all 0.1s ease-out',
+                }}
+              >
+                {w.word}
+              </span>
+            );
+          })}
+        </span>
+      </div>
+    </div>
+  );
+};
+
 // Scene Sequence Renderer
 const SceneRenderer: React.FC<{
   scene: ProjectScene;
   theme: UnifiedProject['theme'];
   category?: string;
-}> = ({ scene, theme, category }) => {
+  fps: number;
+}> = ({ scene, theme, category, fps }) => {
   return (
     <AbsoluteFill
       style={{
@@ -424,6 +522,9 @@ const SceneRenderer: React.FC<{
         <ElementRenderer key={el.id} element={el} theme={theme} />
       ))}
 
+      {/* Render karaoke subtitle captions */}
+      <SceneCaptionsRenderer captions={scene.captions} fps={fps} />
+
       {/* Bottom Footer Safe Zone */}
       <div
         style={{
@@ -474,19 +575,30 @@ export const UnifiedProjectComposition: React.FC<UnifiedProject> = (project) => 
         return (
           <React.Fragment key={scene.id}>
             <Sequence from={fromFrame} durationInFrames={durationFrames}>
-              <SceneRenderer scene={scene} theme={theme} category={category} />
+              <SceneRenderer scene={scene} theme={theme} category={category} fps={fps} />
             </Sequence>
 
             {/* Render transition into next scene if defined */}
-            {nextScene && nextScene.transition && nextScene.transition.type === 'slash' && (
+            {nextScene && nextScene.transition && nextScene.transition.type && nextScene.transition.type !== 'none' && (
               <Sequence
                 from={fromFrame + durationFrames - Math.round(0.3 * fps)}
                 durationInFrames={Math.round(0.5 * fps)}
               >
-                <SlashTransition
-                  direction={nextScene.transition.direction === 'left' ? 'left' : 'right'}
-                  color={theme.colors.accent}
-                />
+                {nextScene.transition.type === 'slash' && (
+                  <SlashTransition
+                    direction={nextScene.transition.direction === 'left' ? 'left' : 'right'}
+                    color={theme.colors.accent}
+                  />
+                )}
+                {nextScene.transition.type === 'fade' && (
+                  <FadeTransition color={theme.colors.secondary || '#000000'} />
+                )}
+                {nextScene.transition.type === 'slide' && (
+                  <SlideTransition
+                    direction={nextScene.transition.direction === 'left' ? 'left' : 'right'}
+                    color={theme.colors.primary}
+                  />
+                )}
               </Sequence>
             )}
           </React.Fragment>

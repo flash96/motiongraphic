@@ -315,6 +315,7 @@ export async function generateProjectFromPrompt(prompt, options = {}) {
 
   const apiKey = getApiKey();
   const { assets, audioList } = buildAssetCatalogContext();
+  let providerError = null;
 
   // If Gemini API Key is configured, attempt real Gemini REST API call
   if (apiKey) {
@@ -367,6 +368,16 @@ STRICT ASSET USAGE RULES:
           const parsed = JSON.parse(rawJsonText);
           const validated = validateProject(parsed);
           if (validated.valid) {
+            // Verify all asset IDs exist in catalog; fallback unknown IDs to default
+            const knownAssetIds = new Set(assets.map(a => a.id));
+            validated.project.scenes.forEach(sc => {
+              (sc.elements || []).forEach(el => {
+                if (el.assetId && !knownAssetIds.has(el.assetId)) {
+                  el.assetId = "ast_logo_persib";
+                }
+              });
+            });
+
             recalculateSceneTimings(validated.project);
             return {
               success: true,
@@ -374,11 +385,17 @@ STRICT ASSET USAGE RULES:
               source: "gemini_api",
               summary: `Proyek "${validated.project.videoTitle}" berhasil dirancang oleh Gemini AI (${validated.project.scenes.length} adegan).`
             };
+          } else {
+            providerError = `Skema tidak valid: ${validated.errors.join(", ")}`;
           }
+        } else {
+          providerError = "Respons Gemini tidak memuat teks JSON";
         }
+      } else {
+        providerError = `Gemini API error HTTP ${res.status}`;
       }
     } catch (err) {
-      // In case of timeout or API failure, gracefully fallback to the built-in Intelligent Creative Director
+      providerError = err.message || "Timeout / koneksi ke Gemini API gagal";
     }
   }
 
@@ -389,30 +406,23 @@ STRICT ASSET USAGE RULES:
   return {
     success: true,
     project: validated.project,
-    source: apiKey ? "gemini_fallback" : "creative_director_engine",
-    summary: `Proyek "${project.videoTitle}" berhasil dirancang dengan ${project.scenes.length} adegan berdasar instruksi.`
+    source: apiKey ? "heuristic_fallback" : "heuristic_offline",
+    providerError: providerError || null,
+    summary: apiKey
+      ? `[Fallback Heuristik] Proyek "${project.videoTitle}" dirancang dengan mesin heuristik internal (${providerError || 'Gemini tidak merespons'}).`
+      : `Proyek "${project.videoTitle}" berhasil dirancang dengan mesin Creative Director lokal (${project.scenes.length} adegan).`
   };
 }
 
 /**
- * Revises an existing project based on incremental prompt instructions.
- * Preserves unrelated scenes, elements, and configurations.
+ * Revises an existing project based on incremental prompt instructions using heuristic rules.
  */
-export async function reviseProjectWithAI(currentProject, revisionPrompt, targetSceneId = null) {
-  if (!currentProject || !Array.isArray(currentProject.scenes)) {
-    throw new Error("Project aktif tidak valid.");
-  }
-
+export function reviseProjectWithHeuristic(currentProject, revisionPrompt, targetSceneId = null) {
   const cleanPrompt = sanitizeUserPrompt(revisionPrompt);
-  if (!cleanPrompt) {
-    throw new Error("Instruksi revisi tidak boleh kosong.");
-  }
-
   const pLower = cleanPrompt.toLowerCase();
-  // Deep clone to ensure immutability & undoability
   const revised = JSON.parse(JSON.stringify(currentProject));
 
-  // Determine target scene (if not specified, inspect prompt or default to active)
+  // Determine target scene
   let targetScene = null;
   if (targetSceneId) {
     targetScene = revised.scenes.find(s => String(s.id) === String(targetSceneId));
@@ -436,7 +446,7 @@ export async function reviseProjectWithAI(currentProject, revisionPrompt, target
 
   let summary = "Revisi diterapkan.";
 
-  // Revision Type 1: Aspect Ratio change (e.g. "buat versi landscape" or "jadikan 16:9")
+  // Revision Type 1: Aspect Ratio change
   if (pLower.includes("landscape") || pLower.includes("16:9")) {
     revised.aspectRatio = "16:9";
     revised.canvas.width = 1920;
@@ -454,7 +464,7 @@ export async function reviseProjectWithAI(currentProject, revisionPrompt, target
     summary = "Format kanvas diubah menjadi Vertikal 9:16 (1080×1920).";
   }
 
-  // Revision Type 2: Duration adjustment (e.g. "kurangi durasi intro menjadi 3 detik")
+  // Revision Type 2: Duration adjustment
   const durMatch = cleanPrompt.match(/(\d+)\s*(?:detik|s|second)/i);
   if (durMatch && (pLower.includes("durasi") || pLower.includes("detik"))) {
     const newDur = Math.max(1, Math.min(60, Number(durMatch[1])));
@@ -464,7 +474,7 @@ export async function reviseProjectWithAI(currentProject, revisionPrompt, target
     }
   }
 
-  // Revision Type 3: Change background of scene
+  // Revision Type 3: Change background
   if (pLower.includes("background") || pLower.includes("latar")) {
     if (targetScene) {
       targetScene.background = "radial-gradient(ellipse at 50% 20%, #003da5 0%, #05070e 80%)";
@@ -472,7 +482,7 @@ export async function reviseProjectWithAI(currentProject, revisionPrompt, target
     }
   }
 
-  // Revision Type 4: Enlarge headline / text (e.g. "buat judul lebih besar")
+  // Revision Type 4: Enlarge headline / text
   if (pLower.includes("lebih besar") || pLower.includes("perbesar") || pLower.includes("font")) {
     if (targetScene && Array.isArray(targetScene.elements)) {
       const textElem = targetScene.elements.find(e => e.type === "text");
@@ -484,7 +494,7 @@ export async function reviseProjectWithAI(currentProject, revisionPrompt, target
     }
   }
 
-  // Revision Type 5: Change animation (e.g. "ubah animasi menjadi lebih smooth" or "scale")
+  // Revision Type 5: Change animation
   if (pLower.includes("animasi") || pLower.includes("smooth")) {
     if (targetScene && Array.isArray(targetScene.elements)) {
       targetScene.elements.forEach(el => {
@@ -497,7 +507,7 @@ export async function reviseProjectWithAI(currentProject, revisionPrompt, target
     }
   }
 
-  // Revision Type 6: Swap asset (e.g. "ganti foto pemain", "tampilkan piala", "tampilkan jersey")
+  // Revision Type 6: Swap asset
   if (pLower.includes("trophy") || pLower.includes("piala")) {
     if (targetScene && Array.isArray(targetScene.elements)) {
       const visualElem = targetScene.elements.find(e => ["image", "svg", "component"].includes(e.type));
@@ -528,6 +538,106 @@ export async function reviseProjectWithAI(currentProject, revisionPrompt, target
     success: true,
     project: validated.project,
     summary
+  };
+}
+
+/**
+ * Revises an existing project based on incremental prompt instructions.
+ * Connects to Gemini API when available, and falls back gracefully to Heuristic Engine with transparent source status.
+ */
+export async function reviseProjectWithAI(currentProject, revisionPrompt, targetSceneId = null) {
+  if (!currentProject || !Array.isArray(currentProject.scenes)) {
+    throw new Error("Project aktif tidak valid.");
+  }
+
+  const cleanPrompt = sanitizeUserPrompt(revisionPrompt);
+  if (!cleanPrompt) {
+    throw new Error("Instruksi revisi tidak boleh kosong.");
+  }
+
+  const apiKey = getApiKey();
+  const { assets, audioList } = buildAssetCatalogContext();
+  let providerError = null;
+
+  if (apiKey) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+      const systemInstruction = `You are the Lead Creative Director revising a Unified Project JSON (version 1.0.0).
+Your task: Modify the project based on the user's revision instruction.
+Target Scene ID: ${targetSceneId || "auto (infer from prompt or revise relevant scenes)"}
+
+STRICT REVISION RULES:
+1. ONLY modify the properties or scenes relevant to the user's instruction.
+2. PRESERVE all other scenes, elements, audio settings, and styling unchanged.
+3. You may ONLY reference visual asset IDs that exist in the catalog: ${JSON.stringify(assets.map(a => a.id))}
+4. The output must be pure parseable JSON representing the complete revised UnifiedProject object.`;
+
+      const requestBody = {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `${systemInstruction}\n\nCURRENT PROJECT JSON:\n${JSON.stringify(currentProject)}\n\nREVISION INSTRUCTION:\n"${cleanPrompt}"`
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.2
+        }
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 18000);
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const geminiRes = await res.json();
+        const rawJson = geminiRes.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawJson) {
+          const parsed = JSON.parse(rawJson);
+          const validated = validateProject(parsed);
+          if (validated.valid) {
+            recalculateSceneTimings(validated.project);
+            return {
+              success: true,
+              project: validated.project,
+              source: "gemini_api",
+              summary: `Revisi proyek berhasil diterapkan oleh Gemini AI sesuai instruksi "${cleanPrompt}".`
+            };
+          } else {
+            providerError = `Validasi skema gagal: ${validated.errors.join(", ")}`;
+          }
+        }
+      } else {
+        providerError = `Gemini API HTTP ${res.status}`;
+      }
+    } catch (err) {
+      providerError = err.message || "Timeout / gagal terhubung ke Gemini API";
+    }
+  }
+
+  // Fallback to Heuristic Revision
+  const heuristicResult = reviseProjectWithHeuristic(currentProject, cleanPrompt, targetSceneId);
+  return {
+    success: true,
+    project: heuristicResult.project,
+    source: apiKey ? "heuristic_fallback" : "heuristic_offline",
+    providerError: providerError || null,
+    summary: apiKey
+      ? `[Fallback Heuristik] ${heuristicResult.summary} (Gemini tidak merespons: ${providerError}).`
+      : `${heuristicResult.summary} (Mode Revisi Heuristik Lokal)`
   };
 }
 

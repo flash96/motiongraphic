@@ -38,3 +38,63 @@ export const SlashTransition: React.FC<{
   );
 };
 
+export const FadeTransition: React.FC<{
+  color?: string;
+}> = ({ color = '#000000' }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const opacity = interpolate(
+    frame,
+    [0, 0.2 * fps, 0.4 * fps],
+    [0, 1, 0],
+    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+  );
+
+  return (
+    <AbsoluteFill
+      style={{
+        backgroundColor: color,
+        opacity,
+        pointerEvents: 'none',
+        zIndex: 99,
+      }}
+    />
+  );
+};
+
+export const SlideTransition: React.FC<{
+  direction?: 'left' | 'right';
+  color?: string;
+}> = ({ direction = 'right', color = '#003da5' }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const progress = interpolate(frame, [0, 0.35 * fps], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+
+  const fadeOut = interpolate(frame, [0.35 * fps, 0.5 * fps], [1, 0], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+
+  const translateX = direction === 'right'
+    ? interpolate(progress, [0, 1], [-100, 100])
+    : interpolate(progress, [0, 1], [100, -100]);
+
+  return (
+    <AbsoluteFill style={{ opacity: fadeOut, overflow: 'hidden', zIndex: 99 }}>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundColor: color,
+          transform: `translateX(${translateX}%)`,
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+

@@ -261,6 +261,35 @@ const btnSubmitVoiceClone = document.getElementById("btnSubmitVoiceClone");
 let cloneAudioSampleBase64 = null;
 let cloneAudioSampleMimeType = "audio/mpeg";
 
+// Caption & Subtitle Elements (Phase 4B)
+const sceneCaptionControlBox = document.getElementById("sceneCaptionControlBox");
+const chkCaptionEnabled = document.getElementById("chkCaptionEnabled");
+const captionStatusBadge = document.getElementById("captionStatusBadge");
+const captionConfigControls = document.getElementById("captionConfigControls");
+const btnGenerateCaptions = document.getElementById("btnGenerateCaptions");
+const btnPreviewCaptions = document.getElementById("btnPreviewCaptions");
+const captionAccuracyNotice = document.getElementById("captionAccuracyNotice");
+const selCaptionPreset = document.getElementById("selCaptionPreset");
+const selCaptionPosition = document.getElementById("selCaptionPosition");
+const inpCaptionFontSize = document.getElementById("inpCaptionFontSize");
+const valCaptionFontSize = document.getElementById("valCaptionFontSize");
+const inpCaptionHighlightColor = document.getElementById("inpCaptionHighlightColor");
+const txtCaptionHighlightColor = document.getElementById("txtCaptionHighlightColor");
+const captionSegmentCount = document.getElementById("captionSegmentCount");
+const btnAddCaptionSegment = document.getElementById("btnAddCaptionSegment");
+const captionSegmentsList = document.getElementById("captionSegmentsList");
+const captionGenerateProgress = document.getElementById("captionGenerateProgress");
+
+// Render MP4 Modal Elements
+const renderMp4Modal = document.getElementById("renderMp4Modal");
+const btnCloseRenderModal = document.getElementById("btnCloseRenderModal");
+const renderProjectTitle = document.getElementById("renderProjectTitle");
+const btnStartRemotionRender = document.getElementById("btnStartRemotionRender");
+const remotionRenderStatus = document.getElementById("remotionRenderStatus");
+const remotionDownloadResult = document.getElementById("remotionDownloadResult");
+const linkDownloadRenderedVideo = document.getElementById("linkDownloadRenderedVideo");
+const btnDownloadPlaywrightScript = document.getElementById("btnDownloadPlaywrightScript");
+
 // Audio Controls
 const chkAudioEnabled = document.getElementById("chkAudioEnabled");
 const selAudioPreset = document.getElementById("selAudioPreset");
@@ -988,6 +1017,7 @@ function syncInspector() {
     if (propSceneVisualAction) propSceneVisualAction.value = scene.visualAction || "";
 
     syncVoiceoverInspector(scene);
+    syncCaptionInspector(scene);
 
   } else {
     if (inspectorEmptyNotice) inspectorEmptyNotice.style.display = "block";
@@ -1246,6 +1276,10 @@ function bindInspectorEvents() {
         }
         syncVoiceoverInspector(sc);
       }
+      if (sc.captions && sc.captions.segments?.length > 0) {
+        sc.captions.status = "outdated";
+        syncCaptionInspector(sc);
+      }
       debouncedHistoryPush();
     }
   });
@@ -1300,6 +1334,8 @@ function bindInspectorEvents() {
 
   bindVoiceoverEvents();
   bindVoiceCloneEvents();
+  bindCaptionEvents();
+  bindRenderModalEvents();
 }
 
 // ========================================================
@@ -2822,6 +2858,7 @@ function bindVoiceoverEvents() {
           showToast(`Voiceover untuk "${scene.name || 'Adegan'}" berhasil dibuat!`);
         }
         syncVoiceoverInspector(scene);
+    syncCaptionInspector(scene);
         compileAndRender();
         renderTimeline();
       } catch (err) {
@@ -2849,6 +2886,7 @@ function bindVoiceoverEvents() {
       scene.voiceover.status = "idle";
       scene.voiceover.sourceText = "";
       syncVoiceoverInspector(scene);
+    syncCaptionInspector(scene);
       compileAndRender();
       renderTimeline();
       showToast("Voiceover berhasil dihapus.");
@@ -3121,6 +3159,417 @@ function bindVoiceCloneEvents() {
 }
 
 // ========================================================
+// 17C. AUTO-CAPTION & KARAOKE SUBTITLE CONTROLLER (PHASE 4B)
+// ========================================================
+function syncCaptionInspector(scene) {
+  if (!sceneCaptionControlBox || !scene) return;
+
+  const caps = scene.captions;
+  if (!caps || caps.enabled === false) {
+    if (chkCaptionEnabled) chkCaptionEnabled.checked = false;
+    if (captionStatusBadge) {
+      captionStatusBadge.className = "badge-caption-idle";
+      captionStatusBadge.textContent = "Nonaktif";
+    }
+  } else {
+    if (chkCaptionEnabled) chkCaptionEnabled.checked = true;
+    if (captionStatusBadge) {
+      if (caps.status === "outdated") {
+        captionStatusBadge.className = "badge-caption-outdated";
+        captionStatusBadge.textContent = "Perlu Sinkron";
+      } else if (caps.segments && caps.segments.length > 0) {
+        captionStatusBadge.className = "badge-caption-ready";
+        captionStatusBadge.textContent = `${caps.segments.length} Segmen Aktif`;
+      } else {
+        captionStatusBadge.className = "badge-caption-idle";
+        captionStatusBadge.textContent = "Belum Ada";
+      }
+    }
+  }
+
+  // Update Accuracy Notice
+  if (captionAccuracyNotice) {
+    if (!caps || !caps.segments || caps.segments.length === 0) {
+      captionAccuracyNotice.innerHTML = `Belum di-generate. Klik "Generate Captions" untuk menghitung timing kata.`;
+    } else if (caps.accuracy === "accurate") {
+      captionAccuracyNotice.innerHTML = `🎯 <strong>Akurasi: Provider Timestamps</strong> (${caps.segments.length} segmen sinkron frame)`;
+    } else if (caps.accuracy === "measured") {
+      captionAccuracyNotice.innerHTML = `📏 <strong>Akurasi: Acoustic Forced Alignment</strong> (Envelope waveform terukur)`;
+    } else {
+      captionAccuracyNotice.innerHTML = `⚠️ <strong>Akurasi: Estimasi Fonetik</strong> (${caps.segments.length} segmen berbobot suku kata)`;
+    }
+  }
+
+  // Update Style Controls
+  const style = caps?.style || {};
+  if (selCaptionPreset) selCaptionPreset.value = style.preset || "persib_gold";
+  if (selCaptionPosition) selCaptionPosition.value = style.position || "bottom";
+  if (inpCaptionFontSize) inpCaptionFontSize.value = style.fontSize || 34;
+  if (valCaptionFontSize) valCaptionFontSize.textContent = `${style.fontSize || 34}px`;
+  if (inpCaptionHighlightColor) inpCaptionHighlightColor.value = style.highlightColor || "#f0a500";
+  if (txtCaptionHighlightColor) txtCaptionHighlightColor.textContent = style.highlightColor || "#f0a500";
+
+  renderCaptionSegmentsList(scene);
+}
+
+function renderCaptionSegmentsList(scene) {
+  if (!captionSegmentsList) return;
+  const caps = scene?.captions;
+  const segments = caps?.segments || [];
+  if (captionSegmentCount) captionSegmentCount.textContent = segments.length;
+
+  captionSegmentsList.innerHTML = "";
+  if (segments.length === 0) {
+    captionSegmentsList.innerHTML = `
+      <div style="font-size: 11px; color: var(--text-dim); text-align: center; padding: 10px 0;">
+        Belum ada segmen subtitle.
+      </div>
+    `;
+    return;
+  }
+
+  segments.forEach((seg, idx) => {
+    const card = document.createElement("div");
+    card.className = "caption-segment-card";
+
+    card.innerHTML = `
+      <div class="caption-segment-header">
+        <span style="font-weight: 700; color: #38bdf8;">#${idx + 1} (${seg.words?.length || 0} kata)</span>
+        <div style="display: flex; gap: 4px;">
+          ${idx < segments.length - 1 ? `<button type="button" class="btn-layer-icon btn-merge-seg" data-idx="${idx}" title="Gabung dengan segmen berikutnya">🔗</button>` : ''}
+          <button type="button" class="btn-layer-icon btn-split-seg" data-idx="${idx}" title="Pecah segmen">✂️</button>
+          <button type="button" class="btn-layer-icon btn-del-seg" data-idx="${idx}" title="Hapus segmen" style="color: var(--danger);">✕</button>
+        </div>
+      </div>
+      <input type="text" class="form-input inp-seg-text" data-idx="${idx}" value="${escapeHTML(seg.text || '')}" style="font-size: 11px; padding: 4px 6px; min-height: 28px;">
+      <div class="caption-segment-timing">
+        <span style="font-size: 10px; color: var(--text-muted);">Mulai:</span>
+        <input type="number" step="0.05" min="0" class="form-input inp-seg-start" data-idx="${idx}" value="${seg.start ?? 0}" style="font-size: 10px; padding: 2px 4px; min-height: 24px; width: 65px;">
+        <span style="font-size: 10px; color: var(--text-muted);">Selesai:</span>
+        <input type="number" step="0.05" min="0" class="form-input inp-seg-end" data-idx="${idx}" value="${seg.end ?? 0}" style="font-size: 10px; padding: 2px 4px; min-height: 24px; width: 65px;">
+        <span style="font-size: 10px; color: var(--text-dim); margin-left: auto;">${seg.duration || Math.round(((seg.end || 0) - (seg.start || 0)) * 100) / 100}s</span>
+      </div>
+    `;
+
+    captionSegmentsList.appendChild(card);
+  });
+
+  captionSegmentsList.querySelectorAll(".inp-seg-text").forEach(input => {
+    input.addEventListener("change", (e) => {
+      const idx = Number(e.target.dataset.idx);
+      if (segments[idx]) {
+        segments[idx].text = e.target.value;
+        debouncedHistoryPush();
+        compileAndRender();
+      }
+    });
+  });
+
+  captionSegmentsList.querySelectorAll(".inp-seg-start").forEach(input => {
+    input.addEventListener("change", (e) => {
+      const idx = Number(e.target.dataset.idx);
+      if (segments[idx]) {
+        segments[idx].start = Math.max(0, parseFloat(e.target.value) || 0);
+        segments[idx].duration = Math.max(0.1, Math.round((segments[idx].end - segments[idx].start) * 100) / 100);
+        debouncedHistoryPush();
+        compileAndRender();
+      }
+    });
+  });
+
+  captionSegmentsList.querySelectorAll(".inp-seg-end").forEach(input => {
+    input.addEventListener("change", (e) => {
+      const idx = Number(e.target.dataset.idx);
+      if (segments[idx]) {
+        segments[idx].end = Math.max(segments[idx].start + 0.1, parseFloat(e.target.value) || 0);
+        segments[idx].duration = Math.max(0.1, Math.round((segments[idx].end - segments[idx].start) * 100) / 100);
+        debouncedHistoryPush();
+        compileAndRender();
+      }
+    });
+  });
+
+  captionSegmentsList.querySelectorAll(".btn-del-seg").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const idx = Number(e.currentTarget.dataset.idx);
+      history.push(appProject);
+      segments.splice(idx, 1);
+      renderCaptionSegmentsList(scene);
+      compileAndRender();
+      showToast("Segmen subtitle dihapus.");
+    });
+  });
+
+  captionSegmentsList.querySelectorAll(".btn-merge-seg").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const idx = Number(e.currentTarget.dataset.idx);
+      if (segments[idx] && segments[idx + 1]) {
+        history.push(appProject);
+        const merged = {
+          id: segments[idx].id,
+          start: segments[idx].start,
+          end: segments[idx + 1].end,
+          duration: Math.round((segments[idx + 1].end - segments[idx].start) * 100) / 100,
+          text: `${segments[idx].text} ${segments[idx + 1].text}`.trim(),
+          words: [...(segments[idx].words || []), ...(segments[idx + 1].words || [])]
+        };
+        segments.splice(idx, 2, merged);
+        renderCaptionSegmentsList(scene);
+        compileAndRender();
+        showToast("Dua segmen berhasil digabungkan.");
+      }
+    });
+  });
+
+  captionSegmentsList.querySelectorAll(".btn-split-seg").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const idx = Number(e.currentTarget.dataset.idx);
+      const target = segments[idx];
+      if (target) {
+        const words = target.text.split(/\s+/).filter(Boolean);
+        if (words.length <= 1) {
+          alert("Segmen hanya memiliki satu kata, tidak dapat dipecah lagi.");
+          return;
+        }
+        history.push(appProject);
+        const half = Math.ceil(words.length / 2);
+        const part1Words = words.slice(0, half);
+        const part2Words = words.slice(half);
+        const midTime = Math.round(((target.start + target.end) / 2) * 100) / 100;
+
+        const seg1 = {
+          id: `${target.id}_a`,
+          start: target.start,
+          end: midTime,
+          duration: Math.round((midTime - target.start) * 100) / 100,
+          text: part1Words.join(" "),
+          words: (target.words || []).slice(0, half)
+        };
+        const seg2 = {
+          id: `${target.id}_b`,
+          start: midTime,
+          end: target.end,
+          duration: Math.round((target.end - midTime) * 100) / 100,
+          text: part2Words.join(" "),
+          words: (target.words || []).slice(half)
+        };
+
+        segments.splice(idx, 1, seg1, seg2);
+        renderCaptionSegmentsList(scene);
+        compileAndRender();
+        showToast("Segmen berhasil dipecah menjadi dua.");
+      }
+    });
+  });
+}
+
+function bindCaptionEvents() {
+  if (chkCaptionEnabled) {
+    chkCaptionEnabled.addEventListener("change", (e) => {
+      const scene = getActiveScene();
+      if (!scene) return;
+      if (!scene.captions) scene.captions = { enabled: true, segments: [] };
+      scene.captions.enabled = e.target.checked;
+      debouncedHistoryPush();
+      compileAndRender();
+      syncCaptionInspector(scene);
+    });
+  }
+
+  if (btnGenerateCaptions) {
+    btnGenerateCaptions.addEventListener("click", async () => {
+      const scene = getActiveScene();
+      if (!scene) return;
+      const narration = scene.narration || "";
+      if (!narration.trim()) {
+        alert("Naskah narasi suara adegan kosong. Isi narasi suara terlebih dahulu sebelum membuat caption.");
+        if (propSceneNarration) propSceneNarration.focus();
+        return;
+      }
+
+      btnGenerateCaptions.disabled = true;
+      if (captionGenerateProgress) captionGenerateProgress.style.display = "block";
+
+      try {
+        const audioUrl = scene.voiceover?.audioUrl || null;
+        const preset = selCaptionPreset ? selCaptionPreset.value : "persib_gold";
+        const styleOverrides = {
+          position: selCaptionPosition ? selCaptionPosition.value : "bottom",
+          fontSize: inpCaptionFontSize ? Number(inpCaptionFontSize.value) : 34,
+          highlightColor: inpCaptionHighlightColor ? inpCaptionHighlightColor.value : "#f0a500"
+        };
+
+        const res = await fetch("/api/captions/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sceneId: scene.id,
+            narration: narration.trim(),
+            audioUrl,
+            preset,
+            styleOverrides
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Gagal membuat caption.");
+        }
+
+        history.push(appProject);
+        scene.captions = data.captions;
+        syncCaptionInspector(scene);
+        compileAndRender();
+        showToast(`Subtitle karaoke untuk "${scene.name || 'Adegan'}" berhasil dibuat (${data.captions.segments.length} segmen)!`);
+      } catch (err) {
+        alert(`Gagal membuat subtitle: ${err.message}`);
+      } finally {
+        btnGenerateCaptions.disabled = false;
+        if (captionGenerateProgress) captionGenerateProgress.style.display = "none";
+      }
+    });
+  }
+
+  if (btnPreviewCaptions) {
+    btnPreviewCaptions.addEventListener("click", () => {
+      const scene = getActiveScene();
+      if (!scene) return;
+      sendToStage({ type: "MG_SEEK", time: scene.startTime || 0 });
+      sendToStage({ type: "MG_PLAY" });
+    });
+  }
+
+  if (btnAddCaptionSegment) {
+    btnAddCaptionSegment.addEventListener("click", () => {
+      const scene = getActiveScene();
+      if (!scene) return;
+      if (!scene.captions) scene.captions = { enabled: true, segments: [] };
+      const segments = scene.captions.segments;
+      const lastEnd = segments.length > 0 ? segments[segments.length - 1].end : 0;
+      const newSeg = {
+        id: `seg_${Date.now()}`,
+        start: lastEnd,
+        end: Math.min(scene.duration || 5, lastEnd + 1.5),
+        duration: 1.5,
+        text: "Teks subtitle baru",
+        words: [{ word: "Teks", start: lastEnd, end: lastEnd + 0.5 }, { word: "subtitle", start: lastEnd + 0.5, end: lastEnd + 1.0 }, { word: "baru", start: lastEnd + 1.0, end: lastEnd + 1.5 }]
+      };
+      history.push(appProject);
+      segments.push(newSeg);
+      renderCaptionSegmentsList(scene);
+      compileAndRender();
+    });
+  }
+
+  // Style inputs listeners
+  if (selCaptionPreset) {
+    selCaptionPreset.addEventListener("change", (e) => {
+      const scene = getActiveScene();
+      if (!scene || !scene.captions) return;
+      if (!scene.captions.style) scene.captions.style = {};
+      scene.captions.style.preset = e.target.value;
+      debouncedHistoryPush();
+      compileAndRender();
+    });
+  }
+
+  if (selCaptionPosition) {
+    selCaptionPosition.addEventListener("change", (e) => {
+      const scene = getActiveScene();
+      if (!scene || !scene.captions) return;
+      if (!scene.captions.style) scene.captions.style = {};
+      scene.captions.style.position = e.target.value;
+      debouncedHistoryPush();
+      compileAndRender();
+    });
+  }
+
+  if (inpCaptionFontSize) {
+    inpCaptionFontSize.addEventListener("input", (e) => {
+      if (valCaptionFontSize) valCaptionFontSize.textContent = `${e.target.value}px`;
+      const scene = getActiveScene();
+      if (!scene || !scene.captions) return;
+      if (!scene.captions.style) scene.captions.style = {};
+      scene.captions.style.fontSize = Number(e.target.value);
+      debouncedHistoryPush();
+      compileAndRender();
+    });
+  }
+
+  if (inpCaptionHighlightColor) {
+    inpCaptionHighlightColor.addEventListener("input", (e) => {
+      if (txtCaptionHighlightColor) txtCaptionHighlightColor.textContent = e.target.value;
+      const scene = getActiveScene();
+      if (!scene || !scene.captions) return;
+      if (!scene.captions.style) scene.captions.style = {};
+      scene.captions.style.highlightColor = e.target.value;
+      debouncedHistoryPush();
+      compileAndRender();
+    });
+  }
+}
+
+// ========================================================
+// 17D. REMOTION RENDER MODAL CONTROLLER
+// ========================================================
+function openRenderMp4Modal() {
+  if (renderMp4Modal) renderMp4Modal.style.display = "flex";
+  if (renderProjectTitle) renderProjectTitle.textContent = appProject.videoTitle || appProject.name || "Motion Graphic";
+  if (remotionRenderStatus) remotionRenderStatus.style.display = "none";
+  if (remotionDownloadResult) remotionDownloadResult.style.display = "none";
+}
+
+function closeRenderMp4Modal() {
+  if (renderMp4Modal) renderMp4Modal.style.display = "none";
+}
+
+function bindRenderModalEvents() {
+  if (btnCloseRenderModal) {
+    btnCloseRenderModal.addEventListener("click", () => closeRenderMp4Modal());
+  }
+
+  if (btnStartRemotionRender) {
+    btnStartRemotionRender.addEventListener("click", async () => {
+      btnStartRemotionRender.disabled = true;
+      if (remotionRenderStatus) remotionRenderStatus.style.display = "block";
+      if (remotionDownloadResult) remotionDownloadResult.style.display = "none";
+
+      try {
+        const res = await fetch("/api/render/remotion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project: appProject })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Gagal merender video MP4 dengan Remotion.");
+        }
+
+        if (remotionDownloadResult) remotionDownloadResult.style.display = "block";
+        if (linkDownloadRenderedVideo && data.videoUrl) {
+          linkDownloadRenderedVideo.href = data.videoUrl;
+        }
+        showToast("Video MP4 berhasil dirender dengan Remotion!");
+      } catch (err) {
+        alert(`Gagal merender video: ${err.message}`);
+      } finally {
+        btnStartRemotionRender.disabled = false;
+        if (remotionRenderStatus) remotionRenderStatus.style.display = "none";
+      }
+    });
+  }
+
+  if (btnDownloadPlaywrightScript) {
+    btnDownloadPlaywrightScript.addEventListener("click", () => {
+      downloadRenderPackage(appProject);
+      closeRenderMp4Modal();
+      showToast("Script render Playwright berhasil diunduh.");
+    });
+  }
+}
+
+// ========================================================
 // 18. AI CREATIVE DIRECTOR CONTROLLER (PHASE 3)
 // ========================================================
 let generatedAiProject = null;
@@ -3375,8 +3824,7 @@ if (btnDownloadHtml) {
 
 if (btnDownloadRenderPkg) {
   btnDownloadRenderPkg.addEventListener("click", () => {
-    downloadRenderPackage(appProject);
-    showToast("Script render video MP4 berhasil diunduh!");
+    openRenderMp4Modal();
   });
 }
 

@@ -1,6 +1,7 @@
 import http from "http";
 import fs from "fs";
 import path from "path";
+import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import { sanitizeSvg, isValidSvgString } from "./svg-sanitizer.js";
 import { getAllAssets, addUploadedAsset, BUILTIN_ASSETS, getAssetById } from "./asset-library.js";
@@ -9,6 +10,7 @@ import { getAllAudioAssets, addUploadedAudio, getAudioAssetById } from "./audio-
 import { getOrGenerateThumbnail } from "./thumbnail-manager.js";
 import { defaultTtsManager } from "./tts-manager.js";
 import { createCaptionsFromNarration } from "./caption-aligner.js";
+import { validateProject } from "./project-schema.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -683,21 +685,32 @@ const server = http.createServer(async (req, res) => {
       let audioBuffer = null;
 
       if (audioUrl && typeof audioUrl === "string") {
-        const cleanUrl = audioUrl.split("?")[0];
-        const diskPath = path.join(__dirname, cleanUrl);
-        if (fs.existsSync(diskPath)) {
-          try {
-            audioBuffer = fs.readFileSync(diskPath);
-            // If WAV, extract exact duration
-            if (diskPath.endsWith(".wav") && audioBuffer.length > 44) {
-              const sampleRate = audioBuffer.readUInt32LE(24);
-              const numChannels = audioBuffer.readUInt16LE(22);
-              if (sampleRate > 0 && numChannels > 0) {
-                const totalSamples = (audioBuffer.length - 44) / (numChannels * 2);
-                audioDuration = Math.round((totalSamples / sampleRate) * 100) / 100;
+        const cleanUrl = audioUrl.split("?")[0].trim();
+        const allowedPrefixes = ["/public/audio/", "/public/uploads/audio/"];
+        const isAllowedPrefix = allowedPrefixes.some(prefix => cleanUrl.startsWith(prefix));
+
+        if (isAllowedPrefix) {
+          const diskPath = path.resolve(__dirname, "." + cleanUrl);
+          const rel = path.relative(__dirname, diskPath);
+
+          if (!rel.startsWith("..") && !path.isAbsolute(rel) && fs.existsSync(diskPath)) {
+            try {
+              audioBuffer = fs.readFileSync(diskPath);
+              if (diskPath.endsWith(".wav") && audioBuffer.length > 44) {
+                const sampleRate = audioBuffer.readUInt32LE(24);
+                const numChannels = audioBuffer.readUInt16LE(22);
+                if (sampleRate > 0 && numChannels > 0) {
+                  const totalSamples = (audioBuffer.length - 44) / (numChannels * 2);
+                  audioDuration = Math.round((totalSamples / sampleRate) * 100) / 100;
+                }
+              } else if (diskPath.endsWith(".mp3")) {
+                const audioAsset = getAllAudioAssets().find(a => a.fileUrl === cleanUrl);
+                if (audioAsset && audioAsset.duration > 0) {
+                  audioDuration = audioAsset.duration;
+                }
               }
-            }
-          } catch (_) {}
+            } catch (_) {}
+          }
         }
       }
 
@@ -720,12 +733,79 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // Static File Serving
+  // API 13: POST /api/project/sync-active
+  if (req.method === "POST" && reqPath === "/api/project/sync-active") {
+    try {
+      const parsed = await parseJsonBody(req);
+      const project = parsed.project || parsed;
+      const validated = validateProject(project);
+      if (!validated.valid) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: `Validasi project gagal: ${validated.errors.join(", ")}` }));
+        return;
+      }
+      const inputDir = path.join(__dirname, "input");
+      if (!fs.existsSync(inputDir)) fs.mkdirSync(inputDir, { recursive: true });
+      fs.writeFileSync(path.join(inputDir, "unified-project.json"), JSON.stringify(validated.project, null, 2), "utf-8");
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: true, message: "Project aktif berhasil disinkronkan ke Remotion runner." }));
+      return;
+    } catch (err) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: err.message }));
+      return;
+    }
+  }
+
+  // API 14: POST /api/render/remotion
+  if (req.method === "POST" && reqPath === "/api/render/remotion") {
+    try {
+      const parsed = await parseJsonBody(req);
+      const project = parsed.project || parsed;
+      if (project && project.scenes) {
+        const validated = validateProject(project);
+        if (validated.valid) {
+          const inputDir = path.join(__dirname, "input");
+          if (!fs.existsSync(inputDir)) fs.mkdirSync(inputDir, { recursive: true });
+          fs.writeFileSync(path.join(inputDir, "unified-project.json"), JSON.stringify(validated.project, null, 2), "utf-8");
+        }
+      }
+
+      const outDir = path.join(__dirname, "out");
+      if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+      const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
+
+      execSync(`${npxCmd} remotion render UnifiedProject out/video.mp4`, {
+        cwd: __dirname,
+        stdio: "pipe",
+        timeout: 120000
+      });
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        success: true,
+        videoUrl: "/out/video.mp4",
+        message: "Video MP4 berhasil dirender oleh Remotion!"
+      }));
+      return;
+    } catch (err) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        error: `Render Remotion gagal: ${err.message}`
+      }));
+      return;
+    }
+  }
+
+  // Static File Serving with strict path containment
   let filePath = reqPath;
   if (filePath === "/") filePath = "/index.html";
 
-  const safePath = path.normalize(path.join(__dirname, filePath));
-  if (!safePath.startsWith(__dirname)) {
+  const safePath = path.resolve(__dirname, "." + filePath);
+  const rel = path.relative(__dirname, safePath);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
     res.writeHead(403, { "Content-Type": "text/plain" });
     res.end("Forbidden");
     return;
@@ -740,7 +820,13 @@ const server = http.createServer(async (req, res) => {
 
     const ext = path.extname(safePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
-    res.writeHead(200, { "Content-Type": contentType });
+    const headers = { "Content-Type": contentType };
+    if ([".html", ".css", ".js", ".json"].includes(ext)) {
+      headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+      headers["Pragma"] = "no-cache";
+      headers["Expires"] = "0";
+    }
+    res.writeHead(200, headers);
     res.end(data);
   });
 });

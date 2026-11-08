@@ -63,7 +63,7 @@ async function runAiEngineTests() {
   const genResult = await generateProjectFromPrompt(testPrompt, { aspectRatio: "9:16", duration: 30 });
   assert(genResult.success === true, "AI Generator returns success status");
   assert(genResult.project !== null && typeof genResult.project === "object", "AI Generator returns project object");
-  assert(["gemini_api", "gemini_fallback", "creative_director_engine"].includes(genResult.source), "AI Generator identifies valid engine source");
+  assert(["gemini_api", "gemini_fallback", "creative_director_engine", "heuristic_fallback", "heuristic_offline"].includes(genResult.source), "AI Generator identifies valid engine source");
 
   // [Test 2] Prompt-to-Project generation
   console.log("\n[Test 2] Prompt-to-Project generation");

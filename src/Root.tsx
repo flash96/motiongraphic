@@ -22,6 +22,17 @@ export const RemotionRoot: React.FC = () => {
         width={defaultProject.canvas?.width || 1080}
         height={defaultProject.canvas?.height || 1920}
         defaultProps={defaultProject}
+        calculateMetadata={({ props }) => {
+          const p = (props as unknown as UnifiedProject) || defaultProject;
+          const fps = p.fps || 30;
+          const dur = p.totalDuration || 30;
+          return {
+            fps,
+            durationInFrames: Math.max(1, Math.round(dur * fps)),
+            width: p.canvas?.width || 1080,
+            height: p.canvas?.height || 1920,
+          };
+        }}
       />
 
       {/* Legacy PostMatchRecap composition for backward compatibility */}

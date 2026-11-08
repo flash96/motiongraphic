@@ -376,13 +376,25 @@ export function createCaptionsFromNarration({
 
   const segments = segmentWords(words);
 
+  let generationMethod = "estimated_syllables";
+  let accuracy = "estimated";
+
+  if (providerTimings && (providerTimings.words?.length || providerTimings.characters?.length)) {
+    generationMethod = "provider_timestamps";
+    accuracy = "accurate";
+  } else if (audioBuffer && Buffer.isBuffer(audioBuffer) && audioBuffer.length > 44) {
+    generationMethod = "acoustic_forced_alignment";
+    accuracy = "measured";
+  }
+
   return {
     enabled: true,
     language: "id-ID",
     sourceText: narration.trim(),
     style,
     segments,
-    generationMethod: providerTimings ? "provider_timestamps" : "forced_alignment",
+    generationMethod,
+    accuracy,
     status: "ready",
     generatedAt: new Date().toISOString()
   };
