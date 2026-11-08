@@ -1,5 +1,6 @@
 // Persib Bandung Motion Graphic Templates & Frameworks
 // 5 Tab Kategori Konten Media Persib
+import { migrateLegacyTemplateToProject } from "./project-schema.js";
 
 export const PERSIB_TABS = {
   post_match: {
@@ -401,3 +402,17 @@ export const PERSIB_TABS = {
 export const DEFAULT_TAB = "post_match";
 export const DEFAULT_FRAMEWORK = PERSIB_TABS[DEFAULT_TAB];
 export const FRAMEWORKS = PERSIB_TABS;
+
+export function getUnifiedProjectForTab(tabId) {
+  const template = PERSIB_TABS[tabId] || PERSIB_TABS[DEFAULT_TAB];
+  return migrateLegacyTemplateToProject(template);
+}
+
+export const PERSIB_PROJECTS = {
+  post_match: migrateLegacyTemplateToProject(PERSIB_TABS.post_match),
+  weekly_recap: migrateLegacyTemplateToProject(PERSIB_TABS.weekly_recap),
+  trivia_facts: migrateLegacyTemplateToProject(PERSIB_TABS.trivia_facts),
+  before_match: migrateLegacyTemplateToProject(PERSIB_TABS.before_match),
+  transfer_news: migrateLegacyTemplateToProject(PERSIB_TABS.transfer_news)
+};
+

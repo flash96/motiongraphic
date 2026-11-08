@@ -4,297 +4,707 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MotionGraphic Studio : Pembuat Video Vertikal 9:16</title>
+  <title>MotionGraphic Studio : AI Visual Editor</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
   <!-- Keyboard accessibility skip link -->
-  <a href="#configPanel" class="skip-link">Lewati ke formulir pengaturan</a>
+  <a href="#canvasViewport" class="skip-link">Lewati ke area kerja canvas</a>
 
   <!-- Top App Navigation & Header -->
   <header class="app-header">
     <div class="brand-section">
       <div class="brand-logo-badge" style="background: #003da5; color: #f0a500; font-weight: 900; border: 1px solid #f0a500;" aria-hidden="true">P</div>
       <h1 class="brand-title">Persib Motion Studio</h1>
-      <span class="brand-badge">Media Vertikal 9:16</span>
+      <select id="selectCanvasRatio" class="form-select select-ratio-header" title="Ubah Rasio Kanvas Proyek">
+        <option value="9:16">📱 9:16 (1080×1920)</option>
+        <option value="16:9">🖥️ 16:9 (1920×1080)</option>
+        <option value="1:1">⏹️ 1:1 (1080×1080)</option>
+      </select>
     </div>
 
-    <!-- Quick Templates & Utilities -->
+    <!-- History & Framework Pickers -->
     <div class="header-actions">
-      <div class="template-picker-group">
-        <span class="template-label">Durasi Cepat:</span>
-        <button type="button" class="btn btn-secondary" data-quick-dur="15">15s</button>
-        <button type="button" class="btn btn-secondary active" data-quick-dur="30">30s</button>
-        <button type="button" class="btn btn-secondary" data-quick-dur="45">45s</button>
-        <button type="button" class="btn btn-secondary" id="btnResetFramework"
-          title="Reset tab ini ke format bawaan">Reset Format</button>
+      <!-- AI Creative Director Trigger -->
+      <div class="header-btn-group" role="group" aria-label="Alat AI">
+        <button type="button" class="btn btn-primary btn-header" id="btnOpenAiDirector" title="Rancang Motion Graphic Otomatis dengan AI">
+          ✨ AI Director
+        </button>
+        <button type="button" class="btn btn-secondary btn-header" id="btnOpenAiRevision" title="Revisi Adegan Proyek dengan AI">
+          ⚡ AI Revisi
+        </button>
       </div>
 
+      <div class="header-divider" aria-hidden="true"></div>
+
+      <!-- Asset Library Quick Trigger -->
+      <div class="header-btn-group" role="group" aria-label="Aset">
+        <button type="button" class="btn btn-secondary btn-header" id="btnOpenAssetLibrary" title="Buka Galeri & Pengelola Aset Visual">
+          🖼️ Galeri Aset
+        </button>
+      </div>
+
+      <div class="header-divider" aria-hidden="true"></div>
+
+      <!-- Undo / Redo Controls -->
+      <div class="header-btn-group" role="group" aria-label="Riwayat">
+        <button type="button" class="btn btn-secondary btn-header btn-icon-only" id="btnUndo" title="Undo perubahan (Ctrl+Z)" disabled aria-label="Undo">
+          ↶
+        </button>
+        <button type="button" class="btn btn-secondary btn-header btn-icon-only" id="btnRedo" title="Redo perubahan (Ctrl+Y)" disabled aria-label="Redo">
+          ↷
+        </button>
+      </div>
+
+      <div class="header-divider" aria-hidden="true"></div>
+
+      <!-- Quick Format Tabs -->
+      <div class="header-btn-group template-picker-group" role="group" aria-label="Pilihan Format">
+        <span class="template-label">Format:</span>
+        <button type="button" class="btn btn-secondary btn-header btn-tab-chip active" data-tab-id="post_match" title="Post-Match Recap">⚽ Laga</button>
+        <button type="button" class="btn btn-secondary btn-header btn-tab-chip" data-tab-id="weekly_recap" title="Rangkuman Mingguan">📊 Pekan</button>
+        <button type="button" class="btn btn-secondary btn-header btn-tab-chip" data-tab-id="trivia_facts" title="Fakta & Rekor">💡 Trivia</button>
+        <button type="button" class="btn btn-secondary btn-header btn-tab-chip" data-tab-id="before_match" title="Preview Duel">⚔️ Duel</button>
+        <button type="button" class="btn btn-secondary btn-header btn-tab-chip" data-tab-id="transfer_news" title="Kabar Transfer">📰 Berita</button>
+      </div>
+
+      <div class="header-divider" aria-hidden="true"></div>
+
+      <!-- Export & Import Actions -->
+      <div class="header-btn-group" role="group" aria-label="Berkas dan Ekspor">
+        <input type="file" id="fileImportJson" accept=".json" style="display: none;">
+        <button type="button" class="btn btn-secondary btn-header" id="btnImportJson" title="Impor file Project JSON">Buka JSON</button>
+        <button type="button" class="btn btn-secondary btn-header" id="btnDownloadJson" title="Unduh file Unified Project JSON">Unduh JSON</button>
+        <button type="button" class="btn btn-secondary btn-header" id="btnDownloadHtml" title="Unduh file HTML standalone offline">HTML</button>
+        <button type="button" class="btn btn-secondary btn-header" id="btnDownloadRenderPkg" title="Unduh script render otomatis ke MP4">MP4</button>
+        <button type="button" class="btn btn-secondary btn-header" id="btnExportPrompt" title="Lihat prompt AI">Prompt</button>
+      </div>
+
+      <div class="header-divider" aria-hidden="true"></div>
+
       <!-- Theme Switcher -->
-      <button type="button" class="btn btn-secondary" id="themeToggleBtn" aria-label="Ganti mode tampilan">
+      <button type="button" class="btn btn-secondary btn-header" id="themeToggleBtn" aria-label="Ganti mode tampilan">
         ☼ Terang
       </button>
     </div>
   </header>
 
-  <!-- Workspace Grid Layout -->
-  <main class="app-main">
-    <!-- Left Column: Variable Inspector & Scene Builder -->
-    <section class="config-panel" id="configPanel" aria-label="Panel Pengaturan Variabel Motion Graphic">
+  <!-- Studio Workspace Layout (Phase 2A) -->
+  <main class="studio-layout">
+    <!-- Top 3-Column Working Grid -->
+    <div class="studio-columns">
 
-      <!-- 5 Tab Format Media Persib -->
-      <nav class="content-type-tabs" id="contentTypeTabs" role="tablist" aria-label="Pilih Jenis Konten Persib">
-        <button type="button" class="tab-btn active" data-tab-id="post_match" role="tab" aria-selected="true" title="Post-Match Recap: Rekap skor, statistik, dan Man of the Match">
-          <span class="tab-icon">⚽</span>
-          <span class="tab-title">Post-Match</span>
-          <span class="tab-badge">Hasil Laga</span>
-        </button>
-        <button type="button" class="tab-btn" data-tab-id="weekly_recap" role="tab" aria-selected="false" title="Rangkuman Mingguan: Rekap performa sepekan, tren poin, dan jadwal">
-          <span class="tab-icon">📊</span>
-          <span class="tab-title">Rangkuman</span>
-          <span class="tab-badge">Mingguan</span>
-        </button>
-        <button type="button" class="tab-btn" data-tab-id="trivia_facts" role="tab" aria-selected="false" title="Fakta & Trivia Unik: Sejarah legendaris, rekor emas klub & Bobotoh">
-          <span class="tab-icon">💡</span>
-          <span class="tab-title">Fakta & Trivia</span>
-          <span class="tab-badge">Unik</span>
-        </button>
-        <button type="button" class="tab-btn" data-tab-id="before_match" role="tab" aria-selected="false" title="Before Match: Big match alert, head-to-head & info kickoff">
-          <span class="tab-icon">⚔️</span>
-          <span class="tab-title">Before Match</span>
-          <span class="tab-badge">Preview</span>
-        </button>
-        <button type="button" class="tab-btn" data-tab-id="transfer_news" role="tab" aria-selected="false" title="Transfer & Berita: Wilujeng sumping, profil pilar baru & kabar tim">
-          <span class="tab-icon">📰</span>
-          <span class="tab-title">Transfer</span>
-          <span class="tab-badge">Berita</span>
-        </button>
-      </nav>
+      <!-- LEFT PANEL: Scenes, Layers, and Project Concept -->
+      <aside class="studio-panel-left" aria-label="Panel Kelola Adegan dan Layer">
+        <!-- Navigation Tabs -->
+        <nav class="panel-tab-nav" role="tablist">
+          <button type="button" class="panel-tab-btn active" data-panel-tab="scenes" role="tab" aria-selected="true">
+            🎬 Adegan (<span id="sceneCountBadge">0</span>)
+          </button>
+          <button type="button" class="panel-tab-btn" data-panel-tab="layers" role="tab" aria-selected="false">
+            📑 Layer (<span id="layerCountBadge">0</span>)
+          </button>
+          <button type="button" class="panel-tab-btn" data-panel-tab="concept" role="tab" aria-selected="false">
+            🎨 Konsep
+          </button>
+        </nav>
 
-      <!-- Group 1: Konsep & Topik -->
-      <div class="section-card">
-        <div class="section-header">
-          <h2 class="section-title">1. Topik & Konsep Konten</h2>
-          <span class="section-subtitle">Identitas Cerita</span>
-        </div>
-
-        <div class="form-group">
-          <label for="formTopic" class="form-label">Topik Utama / Headline</label>
-          <input type="text" id="formTopic" class="form-input"
-            placeholder="Ketik topik motion graphic yang ingin kamu buat...">
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="formCategory" class="form-label">Kategori</label>
-            <select id="formCategory" class="form-select">
-              <option value="Hasil Pertandingan">Hasil Pertandingan</option>
-              <option value="Rangkuman Mingguan">Rangkuman Mingguan</option>
-              <option value="Fakta & Trivia Unik">Fakta & Trivia Unik</option>
-              <option value="Preview Pertandingan">Preview Pertandingan</option>
-              <option value="Kabar Transfer & Skuad">Kabar Transfer & Skuad</option>
-              <option value="Edukasi & Taktik">Edukasi & Taktik</option>
-            </select>
+        <!-- Tab 1: Scenes Management -->
+        <div class="panel-tab-content" id="tabContentScenes">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Daftar Adegan Video</span>
+            <button type="button" class="btn btn-secondary btn-mini" id="btnAddScene">+ Adegan</button>
           </div>
-          <div class="form-group">
-            <label for="formGoal" class="form-label">Tujuan Video</label>
-            <select id="formGoal" class="form-select">
-              <option value="Rayakan Kemenangan & Rekap Hasil">Rayakan Kemenangan & Rekap Hasil</option>
-              <option value="Analisis & Update Performa">Analisis & Update Performa</option>
-              <option value="Edukasi & Menghidupkan Sejarah">Edukasi & Menghidupkan Sejarah</option>
-              <option value="Hype Pertandingan & Info Siaran">Hype Pertandingan & Info Siaran</option>
-              <option value="Pengumuman Resmi & Antusiasme">Pengumuman Resmi & Antusiasme</option>
-            </select>
+          <div id="sceneCardList" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Injected by app.js -->
           </div>
         </div>
 
-        <div class="form-group">
-          <label for="formAngle" class="form-label">Sudut Pandang Cerita (Angle)</label>
-          <input type="text" id="formAngle" class="form-input"
-            placeholder="Tulis sudut pandang cerita atau pesan inti penonton...">
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="formAudience" class="form-label">Target Penonton</label>
-            <select id="formAudience" class="form-select">
-              <option value="Bobotoh & Pecinta Sepak Bola Indonesia">Bobotoh & Pecinta Sepak Bola Indonesia</option>
-              <option value="Bobotoh Lintas Generasi & Fans Bola">Bobotoh Lintas Generasi & Fans Bola</option>
-              <option value="Bobotoh & Pemerhati Liga 1">Bobotoh & Pemerhati Liga 1</option>
-              <option value="Pecinta Bursa Transfer Sepak Bola">Pecinta Bursa Transfer Sepak Bola</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="formTone" class="form-label">Nada Bicara</label>
-            <select id="formTone" class="form-select">
-              <option value="Bangga, Bersemangat & Tegas">Bangga, Bersemangat & Tegas</option>
-              <option value="Objektif, Taktis & Optimis">Objektif, Taktis & Optimis</option>
-              <option value="Menarik, Edukatif & Penuh Respek">Menarik, Edukatif & Penuh Respek</option>
-              <option value="Tegang, Agresif & Berenergi Tinggi">Tegang, Agresif & Berenergi Tinggi</option>
-              <option value="Eksklusif, Resmi & Cepat">Eksklusif, Resmi & Cepat</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <!-- Group 2: Preset Gaya Visual & Palet Warna -->
-      <div class="section-card">
-        <div class="section-header">
-          <h2 class="section-title">2. Gaya Visual & Palet Warna</h2>
-          <span class="section-subtitle">Style Lock</span>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Pilih Preset Gaya</label>
-          <div class="preset-grid">
-            <button type="button" class="preset-card-btn active" data-preset-val="preset_b">
-              <span class="preset-card-title">Preset B: Bold Flat</span>
-              <span class="preset-card-desc">Solid kontras, Poppins 800, kartu rounded-24px</span>
-            </button>
-            <button type="button" class="preset-card-btn" data-preset-val="preset_a">
-              <span class="preset-card-title">Preset A: Editorial</span>
-              <span class="preset-card-desc">Latar krem kertas, Playfair italic, aksen hangat</span>
-            </button>
-            <button type="button" class="preset-card-btn" data-preset-val="preset_c">
-              <span class="preset-card-title">Preset C: Playful</span>
-              <span class="preset-card-desc">Latar gelap partikel, Nunito 800, subtitle karaoke</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Palet 4 Warna Kunci</label>
-          <div class="color-picker-grid">
-            <div class="color-item">
-              <span style="font-size: 11px; color: var(--text-muted);">Utama 1</span>
-              <div class="color-input-wrapper">
-                <input type="color" id="colorPrimary" value="#1e3a8a" aria-label="Warna Utama 1">
-                <span class="color-hex-text" id="hexPrimary">#1e3a8a</span>
-              </div>
-            </div>
-            <div class="color-item">
-              <span style="font-size: 11px; color: var(--text-muted);">Utama 2 (Latar)</span>
-              <div class="color-input-wrapper">
-                <input type="color" id="colorSecondary" value="#f1f5f9" aria-label="Warna Utama 2">
-                <span class="color-hex-text" id="hexSecondary">#f1f5f9</span>
-              </div>
-            </div>
-            <div class="color-item">
-              <span style="font-size: 11px; color: var(--text-muted);">Teks Kontras</span>
-              <div class="color-input-wrapper">
-                <input type="color" id="colorText" value="#0f172a" aria-label="Warna Teks Kontras">
-                <span class="color-hex-text" id="hexText">#0f172a</span>
-              </div>
-            </div>
-            <div class="color-item">
-              <span style="font-size: 11px; color: var(--text-muted);">Warna Aksen</span>
-              <div class="color-input-wrapper">
-                <input type="color" id="colorAccent" value="#dc2626" aria-label="Warna Aksen Kunci">
-                <span class="color-hex-text" id="hexAccent">#dc2626</span>
-              </div>
+        <!-- Tab 2: Element & Layer Tree (Active Scene) -->
+        <div class="panel-tab-content" id="tabContentLayers" style="display: none;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;" id="activeSceneLayerTitle">Layer Adegan 1</span>
+            <div style="display: flex; gap: 4px;">
+              <select id="selNewElementType" class="btn btn-secondary btn-mini" style="font-size: 11px; padding: 2px 4px;">
+                <option value="text">Teks</option>
+                <option value="shape">Kotak/Shape</option>
+                <option value="logo">Logo Persib</option>
+                <option value="image">Gambar</option>
+                <option value="svg">Komponen SVG</option>
+                <option value="component">Milestone Data</option>
+              </select>
+              <button type="button" class="btn btn-secondary btn-mini" id="btnAddElement">+ Layer</button>
+              <button type="button" class="btn btn-secondary btn-mini" id="btnOpenAssetModalFromLayers" title="Pilih aset dari galeri">+ Galeri</button>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- Group 3: Durasi & Objek Utama Metaphor -->
-      <div class="section-card">
-        <div class="section-header">
-          <h2 class="section-title">3. Durasi & Kontinuitas Objek</h2>
-          <span class="section-subtitle">Visual Anchor</span>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="formDuration" class="form-label">Durasi Video (Detik)</label>
-            <select id="formDuration" class="form-select">
-              <option value="15">15 Detik (Shorts / Reels Kilat)</option>
-              <option value="30" selected>30 Detik (Standar Rekomendasi)</option>
-              <option value="45">45 Detik (Explainer Sedang)</option>
-              <option value="60">60 Detik (Explainer Lengkap)</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="formMetaphor" class="form-label">Objek Utama (Metaphor)</label>
-            <select id="formMetaphor" class="form-select">
-              <option value="card" selected>Kartu Konsep (Modular & Universal)</option>
-              <option value="chart">Grafik Metrik (Pertumbuhan & Data)</option>
-              <option value="meter">Meteran / Gauge (Capaian & Level)</option>
-              <option value="container">Tabung Wadah (Akumulasi Dinamis)</option>
-            </select>
+          <div id="layerTreeList" style="display: flex; flex-direction: column; gap: 6px;">
+            <!-- Injected by app.js -->
           </div>
         </div>
-      </div>
 
-      <!-- Group 4: Alur Adegan & Naskah -->
-      <div class="section-card">
-        <div class="section-header">
-          <h2 class="section-title">4. Alur Adegan & Naskah</h2>
-          <button type="button" class="btn btn-secondary" id="btnAddScene"
-            style="min-height: 28px; padding: 2px 10px; font-size: 12px;">+ Tambah Adegan</button>
+        <!-- Tab 3: Project Concept & Visual Style -->
+        <div class="panel-tab-content" id="tabContentConcept" style="display: none;">
+          <div class="form-group">
+            <label for="formTopic" class="form-label">Topik Utama Video</label>
+            <input type="text" id="formTopic" class="form-input" placeholder="Ketik topik motion graphic...">
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="formCategory" class="form-label">Kategori</label>
+              <select id="formCategory" class="form-select">
+                <option value="Hasil Pertandingan">Hasil Pertandingan</option>
+                <option value="Rangkuman Mingguan">Rangkuman Mingguan</option>
+                <option value="Fakta & Trivia Unik">Fakta & Trivia Unik</option>
+                <option value="Preview Pertandingan">Preview Pertandingan</option>
+                <option value="Kabar Transfer & Skuad">Kabar Transfer & Skuad</option>
+                <option value="Edukasi & Taktik">Edukasi & Taktik</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="formGoal" class="form-label">Tujuan</label>
+              <select id="formGoal" class="form-select">
+                <option value="Rayakan Kemenangan & Rekap Hasil">Rayakan Kemenangan</option>
+                <option value="Analisis & Update Performa">Analisis & Update</option>
+                <option value="Edukasi & Menghidupkan Sejarah">Edukasi Sejarah</option>
+                <option value="Hype Pertandingan & Info Siaran">Hype Pertandingan</option>
+                <option value="Pengumuman Resmi & Antusiasme">Pengumuman Resmi</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="formAngle" class="form-label">Sudut Pandang (Angle)</label>
+            <input type="text" id="formAngle" class="form-input" placeholder="Sudut pandang cerita...">
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="formAudience" class="form-label">Target Penonton</label>
+              <select id="formAudience" class="form-select">
+                <option value="Bobotoh & Pecinta Sepak Bola Indonesia">Bobotoh & Fans Bola</option>
+                <option value="Bobotoh Lintas Generasi & Fans Bola">Bobotoh Generasi</option>
+                <option value="Bobotoh & Pemerhati Liga 1">Pemerhati Liga 1</option>
+                <option value="Pecinta Bursa Transfer Sepak Bola">Bursa Transfer</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="formTone" class="form-label">Nada Bicara</label>
+              <select id="formTone" class="form-select">
+                <option value="Bangga, Bersemangat & Tegas">Bangga & Tegas</option>
+                <option value="Objektif, Taktis & Optimis">Objektif & Taktis</option>
+                <option value="Menarik, Edukatif & Penuh Respek">Edukatif Respek</option>
+                <option value="Tegang, Agresif & Berenergi Tinggi">Tegang & Agresif</option>
+                <option value="Eksklusif, Resmi & Cepat">Eksklusif Cepat</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Style Preset Selection -->
+          <div class="form-group">
+            <label class="form-label">Preset Gaya</label>
+            <div class="preset-grid">
+              <button type="button" class="preset-card-btn active" data-preset-val="preset_b">
+                <span class="preset-card-title">Bold Flat</span>
+              </button>
+              <button type="button" class="preset-card-btn" data-preset-val="preset_a">
+                <span class="preset-card-title">Editorial</span>
+              </button>
+              <button type="button" class="preset-card-btn" data-preset-val="preset_c">
+                <span class="preset-card-title">Playful</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Color Palette -->
+          <div class="form-group">
+            <label class="form-label">Palet 4 Warna Kunci</label>
+            <div class="color-picker-grid">
+              <div class="color-item">
+                <span style="font-size: 11px; color: var(--text-muted);">Utama 1</span>
+                <div class="color-input-wrapper">
+                  <input type="color" id="colorPrimary" value="#003da5" aria-label="Warna Utama 1">
+                  <span class="color-hex-text" id="hexPrimary">#003da5</span>
+                </div>
+              </div>
+              <div class="color-item">
+                <span style="font-size: 11px; color: var(--text-muted);">Latar</span>
+                <div class="color-input-wrapper">
+                  <input type="color" id="colorSecondary" value="#0a0a0a" aria-label="Warna Latar">
+                  <span class="color-hex-text" id="hexSecondary">#0a0a0a</span>
+                </div>
+              </div>
+              <div class="color-item">
+                <span style="font-size: 11px; color: var(--text-muted);">Teks</span>
+                <div class="color-input-wrapper">
+                  <input type="color" id="colorText" value="#ffffff" aria-label="Warna Teks">
+                  <span class="color-hex-text" id="hexText">#ffffff</span>
+                </div>
+              </div>
+              <div class="color-item">
+                <span style="font-size: 11px; color: var(--text-muted);">Aksen Emas</span>
+                <div class="color-input-wrapper">
+                  <input type="color" id="colorAccent" value="#f0a500" aria-label="Warna Aksen">
+                  <span class="color-hex-text" id="hexAccent">#f0a500</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="formDuration" class="form-label">Total Durasi (Detik)</label>
+              <input type="number" id="formDuration" class="form-input" min="5" max="180" value="30">
+            </div>
+            <div class="form-group">
+              <label for="formMetaphor" class="form-label">Metaphor</label>
+              <select id="formMetaphor" class="form-select">
+                <option value="card" selected>Kartu Konsep</option>
+                <option value="chart">Grafik Metrik</option>
+                <option value="meter">Meteran / Gauge</option>
+                <option value="container">Wadah Dinamis</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="button" class="btn btn-secondary" id="btnResetFramework" style="width: 100%; margin-top: 8px;">
+            Reset ke Format Asli
+          </button>
+        </div>
+      </aside>
+
+      <!-- CENTER PANEL: Visual Canvas & Stage Workspace -->
+      <section class="studio-canvas-workspace" aria-label="Area Visual Canvas">
+        <!-- Canvas Status Bar -->
+        <div style="width: 100%; max-width: 680px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;">
+          <div class="viewport-info">
+            <span class="viewport-ratio-chip">9:16</span>
+            <span id="canvasDimLabel">1080 × 1920 @ 30 FPS</span>
+            <span style="color: #f0a500; font-weight: 700; margin-left: 8px;" id="canvasActiveInfo">Adegan 1</span>
+          </div>
+
+          <button type="button" class="btn btn-primary" id="btnGenerate" style="min-height: 32px; padding: 4px 12px; font-size: 12px;">
+            Kompilasi Preview
+          </button>
         </div>
 
-        <div class="scenes-container" id="scenesContainer">
-          <!-- Scenes dynamically injected by app.js -->
+        <!-- Canvas Viewport with Interactive Overlay -->
+        <div class="canvas-viewport" id="canvasViewport">
+          <div class="canvas-stage-wrapper" id="canvasStageWrapper">
+            <iframe id="stageIframe" class="stage-iframe" title="Pratinjau Motion Graphic"></iframe>
+            <div id="canvasOverlay" class="canvas-overlay">
+              <!-- Active selection box injected by app.js -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Dedicated Transport Controls -->
+        <div class="player-controls-bar" id="playerControlsBar">
+          <button type="button" class="btn btn-secondary" id="btnParentPlayPause" aria-label="Putar animasi">
+            <span id="parentIconPlay">▶ Putar</span>
+          </button>
+          <button type="button" class="btn btn-secondary" id="btnParentRestart" aria-label="Mulai dari awal">
+            ↺ Ulang
+          </button>
+          <input type="range" class="time-scrubber" id="parentTimeScrubber" min="0" max="30" step="0.01" value="0" aria-label="Slider waktu">
+          <span class="time-display" id="parentTimeDisplay">00:00 / 00:30</span>
+          <select class="form-select speed-select" id="parentSpeedSelect" aria-label="Kecepatan">
+            <option value="0.5">0.5x</option>
+            <option value="1.0" selected>1.0x</option>
+            <option value="1.5">1.5x</option>
+          </select>
+          <button type="button" class="btn btn-secondary btn-record-mode" id="btnParentRecordMode" aria-label="Rekam Layar">
+            ● Rekam
+          </button>
+        </div>
+      </section>
+
+      <!-- RIGHT PANEL: Properties Inspector -->
+      <aside class="studio-panel-right" aria-label="Panel Inspektur Properti">
+        <!-- Empty / No Selection State -->
+        <div id="inspectorEmptyNotice" style="font-size: 13px; color: var(--text-muted); text-align: center; padding: 20px 0;">
+          Pilih adegan atau elemen visual untuk melihat dan mengubah properti.
+        </div>
+
+        <!-- Element Properties Inspector -->
+        <div id="elementInspector" style="display: none; flex-direction: column; gap: 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="layer-badge" id="elemTypeBadge">TEXT</span>
+              <span style="font-size: 13px; font-weight: 700; color: var(--text-main);" id="elemInspectorTitle">Properti Elemen</span>
+            </div>
+            <div style="display: flex; gap: 4px;">
+              <button type="button" class="btn-layer-icon" id="btnInspectorLock" title="Kunci Elemen">🔓</button>
+              <button type="button" class="btn-layer-icon" id="btnInspectorVisible" title="Tampilkan / Sembunyikan">👁️</button>
+              <button type="button" class="btn-layer-icon" id="btnInspectorDuplicate" title="Duplikasi">⧉</button>
+              <button type="button" class="btn-layer-icon" id="btnInspectorDelete" title="Hapus" style="color: var(--danger);">✕</button>
+            </div>
+          </div>
+
+          <!-- Name -->
+          <div class="form-group">
+            <label class="form-label">Nama Layer</label>
+            <input type="text" id="propElemName" class="form-input">
+          </div>
+
+          <!-- Position & Size -->
+          <div class="inspector-section">
+            <span class="inspector-title">Posisi & Ukuran (Canvas 1080x1920)</span>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Posisi X (px)</label>
+                <input type="number" id="propElemX" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Posisi Y (px)</label>
+                <input type="number" id="propElemY" class="form-input">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Lebar (px)</label>
+                <input type="text" id="propElemW" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Tinggi (px)</label>
+                <input type="text" id="propElemH" class="form-input">
+              </div>
+            </div>
+          </div>
+
+          <!-- Transform -->
+          <div class="inspector-section">
+            <span class="inspector-title">Transformasi</span>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Rotasi (derajat)</label>
+                <input type="number" id="propElemRot" class="form-input" min="-360" max="360" value="0">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Opacity (0 - 1)</label>
+                <input type="number" id="propElemOpacity" class="form-input" min="0" max="1" step="0.05" value="1">
+              </div>
+            </div>
+          </div>
+
+          <!-- Text Properties (conditionally shown) -->
+          <div class="inspector-section" id="inspectorTextGroup">
+            <span class="inspector-title">Konten & Tipografi</span>
+            <div class="form-group">
+              <label class="form-label">Teks Konten</label>
+              <textarea id="propElemContent" class="form-textarea" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Kata Aksen (Highlight Emas)</label>
+              <input type="text" id="propElemHighlight" class="form-input">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Ukuran Font (px)</label>
+                <input type="number" id="propElemFontSize" class="form-input" min="12" max="200">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Warna Teks</label>
+                <input type="color" id="propElemColor" class="form-input" style="height: 38px; padding: 2px;">
+              </div>
+            </div>
+          </div>
+
+          <!-- Asset Source Properties (shown for image, logo, svg, component) -->
+          <div class="inspector-section" id="inspectorAssetGroup" style="display: none;">
+            <span class="inspector-title">Sumber Aset Visual</span>
+            <div class="form-group">
+              <label class="form-label">Asset Terkait</label>
+              <div style="display: flex; gap: 6px;">
+                <input type="text" id="propElemAssetId" class="form-input" readonly placeholder="Belum ada aset">
+                <button type="button" class="btn btn-secondary btn-mini" id="btnInspectChangeAsset">Pilih...</button>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Fit Mode</label>
+                <select id="propElemFitMode" class="form-select">
+                  <option value="contain">Contain (Pas)</option>
+                  <option value="cover">Cover (Crop)</option>
+                  <option value="fill">Fill (Rentang)</option>
+                </select>
+              </div>
+              <div class="form-group" style="display: flex; align-items: flex-end;">
+                <button type="button" class="btn btn-danger btn-mini" id="btnInspectRemoveAsset" style="width: 100%; height: 38px;">Lepas</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Appearance / Styling -->
+          <div class="inspector-section">
+            <span class="inspector-title">Tampilan & Gaya</span>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Warna Latar</label>
+                <input type="text" id="propElemBgColor" class="form-input" placeholder="transparent atau #rgba">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Radius Sudut (px)</label>
+                <input type="number" id="propElemRadius" class="form-input" min="0" max="100">
+              </div>
+            </div>
+          </div>
+
+          <!-- Animation -->
+          <div class="inspector-section">
+            <span class="inspector-title">Animasi Elemen</span>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Jenis Animasi</label>
+                <select id="propElemAnimType" class="form-select">
+                  <option value="none">Tidak Ada</option>
+                  <option value="fade">Fade In</option>
+                  <option value="slide">Slide In</option>
+                  <option value="scale">Scale Pop</option>
+                  <option value="rotate">Rotate</option>
+                  <option value="counter">Counter Up</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Delay (detik)</label>
+                <input type="number" id="propElemAnimDelay" class="form-input" min="0" max="30" step="0.1" value="0">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Durasi Animasi (detik)</label>
+              <input type="number" id="propElemAnimDur" class="form-input" min="0.1" max="10" step="0.1" value="0.5">
+            </div>
+          </div>
+        </div>
+
+        <!-- Scene Properties Inspector -->
+        <div id="sceneInspector" style="display: none; flex-direction: column; gap: 14px;">
+          <div style="border-bottom: 1px solid var(--border-subtle); padding-bottom: 8px;">
+            <span style="font-size: 13px; font-weight: 700; color: var(--text-main);" id="sceneInspectorTitle">Properti Adegan</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Nama Adegan</label>
+            <input type="text" id="propSceneTitle" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Durasi Adegan (detik)</label>
+            <input type="number" id="propSceneDuration" class="form-input" min="1" max="60" value="5">
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Transisi Masuk</label>
+              <select id="propSceneTransitionType" class="form-select">
+                <option value="none">Tidak Ada</option>
+                <option value="slash">Slash Diagonal</option>
+                <option value="fade">Fade</option>
+                <option value="slide">Slide</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Arah Transisi</label>
+              <select id="propSceneTransitionDir" class="form-select">
+                <option value="right">Kanan</option>
+                <option value="left">Kiri</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Naskah Narasi Suara</label>
+            <textarea id="propSceneNarration" class="form-textarea" rows="3" placeholder="Tuliskan naskah narasi untuk disuarakan oleh AI..."></textarea>
+          </div>
+
+          <!-- Voiceover AI Studio Section (Phase 4A) -->
+          <div class="voiceover-control-box" id="sceneVoiceoverControlBox">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 11px; font-weight: 700; color: #f0a500; text-transform: uppercase;">🎙️ AI Voiceover (TTS)</span>
+              <span id="voStatusBadge" class="badge-vo-idle">Belum Dibuat</span>
+            </div>
+
+            <!-- Enable Toggle -->
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <label for="chkVoEnabled" style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin: 0; cursor: pointer;">Aktifkan Suara Adegan</label>
+              <input type="checkbox" id="chkVoEnabled" checked style="accent-color: #f0a500; width: 16px; height: 16px; cursor: pointer;">
+            </div>
+
+            <div id="voConfigControls">
+              <!-- Provider Selector -->
+              <div class="form-group" style="margin-bottom: 6px;">
+                <label for="selVoProvider" class="form-label" style="font-size: 11px;">Provider TTS</label>
+                <select id="selVoProvider" class="form-select" style="min-height: 32px; font-size: 11px; padding: 3px 6px;">
+                  <option value="google">Google Cloud Text-to-Speech</option>
+                  <option value="elevenlabs">ElevenLabs</option>
+                </select>
+                <div id="voProviderNotice" style="font-size: 10px; color: var(--text-dim); margin-top: 2px;"></div>
+              </div>
+
+              <!-- Voice & Language Selector -->
+              <div class="form-row" style="gap: 8px; margin-bottom: 6px;">
+                <div class="form-group">
+                  <label for="selVoLanguage" class="form-label" style="font-size: 11px;">Bahasa</label>
+                  <select id="selVoLanguage" class="form-select" style="min-height: 32px; font-size: 11px; padding: 3px 6px;">
+                    <option value="id-ID" selected>🇮🇩 Indonesia</option>
+                    <option value="en-US">🇬🇧 English</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label for="selVoVoice" class="form-label" style="font-size: 11px; margin: 0;">Karakter Suara</label>
+                    <button type="button" class="btn btn-secondary btn-mini" id="btnOpenCloneModal" style="font-size: 10px; padding: 1px 6px; height: 20px; font-weight: 700; color: #f0a500; border-color: rgba(240, 165, 0, 0.4);" title="Tambah custom voice / voice cloning">
+                      + Kloning
+                    </button>
+                  </div>
+                  <select id="selVoVoice" class="form-select" style="min-height: 32px; font-size: 11px; padding: 3px 6px;">
+                    <!-- Dynamically populated -->
+                  </select>
+                </div>
+              </div>
+
+              <!-- Voice Parameters -->
+              <div class="form-row" style="gap: 8px; margin-bottom: 8px;">
+                <div class="form-group">
+                  <label for="rangeVoSpeed" class="form-label" style="font-size: 11px;">
+                    Kecepatan (<span id="valVoSpeed">1.0x</span>)
+                  </label>
+                  <input type="range" id="rangeVoSpeed" min="0.7" max="1.5" step="0.05" value="1.0" style="width: 100%; accent-color: #f0a500; cursor: pointer;">
+                </div>
+                <div class="form-group" id="groupVoParamSecond">
+                  <label for="rangeVoPitch" class="form-label" style="font-size: 11px;" id="lblVoParamSecond">
+                    Pitch (<span id="valVoPitch">0.0</span>)
+                  </label>
+                  <input type="range" id="rangeVoPitch" min="-5.0" max="5.0" step="0.5" value="0.0" style="width: 100%; accent-color: #f0a500; cursor: pointer;">
+                </div>
+              </div>
+
+              <!-- Audio Player / Preview Area -->
+              <div id="voAudioPlayerContainer" style="display: none; padding: 8px; background: var(--bg-card); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <audio id="voPreviewAudioElement" controls style="width: 100%; height: 30px;"></audio>
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--text-dim); margin-top: 4px;">
+                  <span id="voAudioMetaDuration">Durasi: -</span>
+                  <button type="button" class="btn btn-secondary btn-mini danger" id="btnDeleteVoAudio" style="font-size: 10px; padding: 1px 6px;">Hapus Voiceover</button>
+                </div>
+              </div>
+
+              <!-- Action Buttons -->
+              <div style="display: flex; gap: 6px; margin-top: 6px;">
+                <button type="button" class="btn btn-secondary btn-mini" id="btnPreviewVoSpeech" style="flex: 1;" title="Dengarkan contoh suara">
+                  🔊 Tes Suara
+                </button>
+                <button type="button" class="btn btn-primary btn-mini" id="btnGenerateVoAudio" style="flex: 2; font-weight: 700;" title="Ubah naskah adegan menjadi audio">
+                  ✨ Generate Voiceover
+                </button>
+              </div>
+
+              <div id="voGenerateProgress" style="display: none; font-size: 11px; color: #f0a500; margin-top: 4px; text-align: center;">
+                Memproses voiceover...
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Aksi Visual (Referensi)</label>
+            <input type="text" id="propSceneVisualAction" class="form-input">
+          </div>
+        </div>
+
+        <!-- Audio Configuration Section -->
+        <div class="inspector-section" style="margin-top: auto;">
+          <span class="inspector-title">Audio & Musik Latar (BGM)</span>
+          <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
+            <label class="form-label" style="margin: 0;">Aktifkan BGM</label>
+            <input type="checkbox" id="chkAudioEnabled" style="width: 18px; height: 18px; accent-color: #f0a500; cursor: pointer;">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Preset Musik Persib</label>
+            <select id="selAudioPreset" class="form-select">
+              <option value="">-- Pilih Preset atau URL Custom --</option>
+              <option value="https://assets.mixkit.co/music/preview/mixkit-sports-highlights-51.mp3">Energetic Sports Beat</option>
+              <option value="https://assets.mixkit.co/music/preview/mixkit-stadium-rock-energy-978.mp3">Stadium Rock Anthem</option>
+              <option value="https://assets.mixkit.co/music/preview/mixkit-action-drums-pulse-67.mp3">Action Drums Pulse</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">URL Audio Custom</label>
+            <input type="url" id="inpAudioUrl" class="form-input" placeholder="https://domain.com/musik.mp3">
+          </div>
+
+          <div class="form-row" style="align-items: center;">
+            <div class="form-group">
+              <label class="form-label">Volume: <span id="lblAudioVolume">80%</span></label>
+              <input type="range" id="rngAudioVolume" min="0" max="1" step="0.05" value="0.8" style="accent-color: #f0a500; width: 100%; cursor: pointer;">
+            </div>
+            <div class="form-group" style="display: flex; align-items: flex-end;">
+              <button type="button" class="btn btn-secondary btn-mini" id="btnAudioMute" style="width: 100%; min-height: 34px;">
+                Mute
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+    </div>
+
+    <!-- BOTTOM ROW: Multi-Track Timeline Editor (Phase 2A) -->
+    <section class="studio-timeline-workspace" aria-label="Editor Linimasa">
+      <!-- Timeline Top Bar -->
+      <div class="timeline-toolbar">
+        <div class="timeline-timecode">
+          <span>⏱ Linimasa:</span>
+          <span id="tlTimeDisplay">00:00.00 / 00:30.00</span>
+          <span style="font-size: 11px; color: var(--text-dim);" id="tlFrameDisplay">(Frame 0 / 900 @ 30 FPS)</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 11px; color: var(--text-muted);">Skala:</span>
+          <input type="range" id="tlZoomSlider" min="20" max="100" value="40" style="width: 80px; accent-color: var(--primary-accent); cursor: pointer;" title="Perbesar linimasa">
+          <button type="button" class="btn btn-secondary btn-mini" id="btnTlFit" title="Pas ukuran linimasa">Pas Layar</button>
+          <button type="button" class="btn btn-secondary btn-mini" id="btnToggleTimeline" title="Ciutkan / bentangkan linimasa" aria-label="Toggle Linimasa">▼</button>
         </div>
       </div>
 
-      <!-- Master Action Bar -->
-      <div class="generate-action-bar">
-        <button type="button" class="btn btn-primary btn-generate" id="btnGenerate">
-          GENERATE MOTION GRAPHIC
-        </button>
-      </div>
+      <!-- Tracks Container -->
+      <div class="timeline-tracks-scroll" id="tlTracksScroll">
+        <div class="timeline-tracks-inner" id="tlTracksInner" style="width: 1200px;">
+          <!-- Ruler -->
+          <div class="timeline-ruler" id="tlRuler">
+            <!-- Ticks injected by app.js -->
+          </div>
 
-    </section>
+          <!-- Scene Track Lane -->
+          <div class="timeline-track-lane" id="tlSceneLane">
+            <div class="timeline-lane-label">🎬 Adegan</div>
+            <div id="tlSceneBlocksContainer" style="position: relative; flex: 1; height: 100%;">
+              <!-- Scene blocks injected by app.js -->
+            </div>
+          </div>
 
-    <!-- Right Column: Live 9:16 Player & Export Studio -->
-    <section class="preview-panel" aria-label="Studio Preview Motion Graphic">
-      <!-- Top Info & Toolbar -->
-      <div class="preview-top-toolbar">
-        <div class="viewport-info">
-          <span class="viewport-ratio-chip">9:16</span>
-          <span>1080 x 1920 (30 FPS)</span>
+          <!-- Active Scene Elements Track Lane -->
+          <div class="timeline-track-lane" id="tlElementLane">
+            <div class="timeline-lane-label">📑 Elemen</div>
+            <div id="tlElementBlocksContainer" style="position: relative; flex: 1; height: 100%;">
+              <!-- Element blocks injected by app.js -->
+            </div>
+          </div>
+
+          <!-- Audio Track Lane -->
+          <div class="timeline-track-lane" id="tlAudioLane">
+            <div class="timeline-lane-label">🎵 Audio</div>
+            <div id="tlAudioBlockContainer" style="position: relative; flex: 1; height: 100%;">
+              <!-- Audio block injected by app.js -->
+            </div>
+          </div>
+
+          <!-- Scrubbable Playhead Line & Cap -->
+          <div class="timeline-playhead-line" id="tlPlayheadLine" style="left: 90px;">
+            <div class="timeline-playhead-handle" id="tlPlayheadHandle"></div>
+          </div>
         </div>
-
-        <div class="export-actions">
-          <button type="button" class="btn btn-secondary" id="btnExportPrompt">Salin Prompt AI</button>
-          <button type="button" class="btn btn-secondary" id="btnDownloadHtml">Unduh HTML Standalone</button>
-          <button type="button" class="btn btn-secondary" id="btnDownloadRenderPkg">Paket Render MP4</button>
-        </div>
-      </div>
-
-      <!-- Scaled 9:16 Frame -->
-      <div class="stage-frame-container">
-        <iframe id="stageIframe" class="stage-iframe" title="Pratinjau Motion Graphic Vertikal 9:16"></iframe>
-      </div>
-
-      <!-- Dedicated Player Controls Bar -->
-      <div class="player-controls-bar" id="playerControlsBar" role="region" aria-label="Kontrol Pemutar Video">
-        <button type="button" class="btn btn-secondary" id="btnParentPlayPause" aria-label="Putar animasi">
-          <span id="parentIconPlay">▶ Putar</span>
-        </button>
-        <button type="button" class="btn btn-secondary" id="btnParentRestart" aria-label="Mulai dari awal">
-          ↺ Ulang
-        </button>
-        <input type="range" class="time-scrubber" id="parentTimeScrubber" min="0" max="30" step="0.01" value="0"
-          aria-label="Slider linimasa">
-        <span class="time-display" id="parentTimeDisplay">00:00 / 00:30</span>
-        <select class="form-select speed-select" id="parentSpeedSelect" aria-label="Kecepatan pemutaran">
-          <option value="0.5">0.5x</option>
-          <option value="1.0" selected>1.0x</option>
-          <option value="1.5">1.5x</option>
-        </select>
-        <button type="button" class="btn btn-secondary btn-record-mode" id="btnParentRecordMode"
-          aria-label="Mode Rekam Layar">
-          ● Rekam
-        </button>
-      </div>
-
-      <!-- Bottom Hint Bar -->
-      <div class="preview-bottom-bar">
-        <span>Gunakan tombol putar, scrubber, atau pintasan <strong>Spasi</strong> untuk mengontrol animasi.</span>
       </div>
     </section>
   </main>
@@ -319,10 +729,327 @@
     </div>
   </div>
 
+  <!-- Asset Browser Modal (Phase 2B) -->
+  <div class="modal-backdrop" id="assetBrowserModal" role="dialog" aria-modal="true" aria-labelledby="assetModalTitle">
+    <div class="modal-dialog asset-modal-dialog">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 18px;">🖼️</span>
+          <h2 id="assetModalTitle" style="font-size: 16px; font-weight: 700;">Galeri Aset Visual & Komponen SVG</h2>
+        </div>
+        <button type="button" class="btn btn-icon" id="btnCloseAssetModal" aria-label="Tutup galeri">✕</button>
+      </div>
+
+      <div class="modal-body asset-modal-body">
+        <!-- Asset Modal Sub-Tabs (Visual vs Audio) -->
+        <div class="asset-modal-subtabs" style="display: flex; gap: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+          <button type="button" class="btn btn-secondary btn-mini active" id="tabBtnVisualAssets">🎨 Aset Visual & Vektor</button>
+          <button type="button" class="btn btn-secondary btn-mini" id="tabBtnAudioAssets">🎵 Trek Audio & Efek Suara</button>
+        </div>
+
+        <!-- VISUAL ASSETS VIEW -->
+        <div id="visualAssetsView" style="display: flex; flex-direction: column; gap: 12px; height: 100%;">
+          <!-- Top Toolbar: Search + Category Filter -->
+          <div class="asset-modal-toolbar">
+            <div class="asset-search-wrap">
+              <input type="text" id="assetSearchInput" class="form-input" placeholder="Cari nama aset atau tag (cth: logo, piala, radar)...">
+            </div>
+            <div class="asset-uploader-quick">
+              <input type="file" id="assetFileInput" accept=".png,.jpg,.jpeg,.svg" style="display: none;">
+              <button type="button" class="btn btn-secondary btn-mini" id="btnTriggerUpload">
+                📤 Upload File (PNG/JPG/SVG)
+              </button>
+            </div>
+          </div>
+
+          <!-- Drag & Drop Zone -->
+          <div class="asset-dropzone" id="assetDropzone">
+            <div class="dropzone-content">
+              <span class="dropzone-icon">📁</span>
+              <span>Tarik & lepas file PNG, JPG, atau SVG ke sini, atau klik tombol upload (maksimal 5MB).</span>
+            </div>
+            <div id="uploadProgress" class="upload-progress-text" style="display: none;"></div>
+          </div>
+
+          <!-- Category Filter Chips -->
+          <div class="asset-category-chips" id="assetCategoryChips">
+            <!-- Injected dynamically -->
+          </div>
+
+          <!-- Asset Grid Gallery -->
+          <div class="asset-grid" id="assetGalleryGrid">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+
+        <!-- AUDIO ASSETS VIEW (Phase 3) -->
+        <div id="audioAssetsView" style="display: none; flex-direction: column; gap: 12px; height: 100%;">
+          <div class="asset-modal-toolbar">
+            <div class="asset-search-wrap">
+              <input type="text" id="audioSearchInput" class="form-input" placeholder="Cari musik latar, chant stadion, atau sfx transisi...">
+            </div>
+            <div class="asset-uploader-quick">
+              <input type="file" id="audioFileInput" accept=".mp3,.wav" style="display: none;">
+              <button type="button" class="btn btn-secondary btn-mini" id="btnTriggerAudioUpload">
+                📤 Upload Audio (MP3/WAV)
+              </button>
+            </div>
+          </div>
+
+          <div class="asset-dropzone" id="audioDropzone">
+            <div class="dropzone-content">
+              <span class="dropzone-icon">🎵</span>
+              <span>Tarik & lepas file audio MP3 atau WAV (maksimal 10MB) untuk menambah koleksi trek suara.</span>
+            </div>
+            <div id="audioUploadProgress" class="upload-progress-text" style="display: none;"></div>
+          </div>
+
+          <div class="asset-category-chips" id="audioCategoryChips">
+            <!-- Injected dynamically -->
+          </div>
+
+          <div class="audio-list-container" id="audioListContainer" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="modal-footer asset-modal-footer">
+        <div class="asset-selected-preview-info" id="assetSelectedInfo">
+          Pilih salah satu aset untuk digunakan.
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="btn btn-secondary" id="btnCancelAssetModal">Batal</button>
+          <button type="button" class="btn btn-primary" id="btnApplySelectedAsset" disabled>Gunakan Aset</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Creative Director Modal (Phase 3) -->
+  <div class="modal-backdrop" id="aiDirectorModal" role="dialog" aria-modal="true" aria-labelledby="aiModalTitle">
+    <div class="modal-dialog ai-director-dialog">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 20px;">✨</span>
+          <h2 id="aiModalTitle" style="font-size: 16px; font-weight: 700;">AI Creative Director — Prompt to Motion Graphic</h2>
+        </div>
+        <button type="button" class="btn btn-icon" id="btnCloseAiModal" aria-label="Tutup jendela">✕</button>
+      </div>
+
+      <div class="modal-body ai-director-body">
+        <!-- Input Form Section -->
+        <div id="aiInputSection" style="display: flex; flex-direction: column; gap: 14px;">
+          <div class="form-group">
+            <label class="form-label" for="aiPromptInput">Instruksi Cerita / Prompt Video</label>
+            <textarea id="aiPromptInput" class="form-textarea" rows="4" placeholder="Contoh: Buat motion graphic kemenangan dramatis Persib Bandung atas Persija dengan skor 2-1 di Stadion GBLA. Tampilkan papan skor, lencana MOTM, selebrasi juara, dan musik berenergi tinggi untuk Instagram Reels 30 detik."></textarea>
+          </div>
+
+          <!-- Quick Example Chips -->
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Contoh Cepat:</span>
+            <button type="button" class="btn btn-secondary btn-mini ai-chip-prompt" data-prompt="Buat motion graphic kemenangan Persib Bandung dengan skor 2-1. Tampilkan suasana stadion, logo Persib, informasi pencetak gol, piala emas, dan penutup kemenangan dramatis untuk Reels 30 detik.">⚽ Kemenangan 2-1</button>
+            <button type="button" class="btn btn-secondary btn-mini ai-chip-prompt" data-prompt="Buat video pengumuman resmi transfer pemain baru Wilujeng Sumping dengan jersey nomor 10, stempel resmi, dan atmosfer breaking news.">📰 Transfer Wilujeng Sumping</button>
+            <button type="button" class="btn btn-secondary btn-mini ai-chip-prompt" data-prompt="Rancang rangkuman klasemen mingguan dengan statistik duel radar antar lini dan grafik performa taktik.">📊 Rekap Klasemen</button>
+            <button type="button" class="btn btn-secondary btn-mini ai-chip-prompt" data-prompt="Buat trivia fakta unik dan sejarah kejayaan bintang Persib dengan mahkota raja dan trofi juara.">💡 Trivia Sejarah</button>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="aiAspectRatio">Format Rasio Kanvas</label>
+              <select id="aiAspectRatio" class="form-select">
+                <option value="9:16">📱 9:16 Vertikal (Reels / Shorts / Story)</option>
+                <option value="16:9">🖥️ 16:9 Horizontal (YouTube / TV Broadcast)</option>
+                <option value="1:1">⏹️ 1:1 Persegi (Feed Post)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="aiDuration">Target Durasi</label>
+              <select id="aiDuration" class="form-select">
+                <option value="30">30 Detik (Rekomendasi Standar)</option>
+                <option value="15">15 Detik (Cepat / Teaser)</option>
+                <option value="45">45 Detik (Mendalam)</option>
+                <option value="60">60 Detik (Komprehensif)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="aiPreset">Preset Visual Gaya</label>
+              <select id="aiPreset" class="form-select">
+                <option value="preset_b">Bold Flat (Modern, Kontras Tinggi, Sporty)</option>
+                <option value="preset_a">Editorial Hangat (Klasik Elegan)</option>
+                <option value="preset_c">Playful Edukasi (Dinamis & Ramah)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Progress / Loading State -->
+        <div id="aiLoadingSection" style="display: none; padding: 30px 20px; text-align: center; flex-direction: column; align-items: center; gap: 14px;">
+          <div class="ai-spinner"></div>
+          <div style="font-size: 15px; font-weight: 700; color: #f0a500;" id="aiLoadingStatusText">
+            Menganalisis instruksi & merancang struktur adegan...
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted);" id="aiLoadingSubtext">
+            Memilih aset visual dan trek audio yang paling sesuai dari Shared Library
+          </div>
+        </div>
+
+        <!-- AI Storyboard & Concept Result Section -->
+        <div id="aiResultSection" style="display: none; flex-direction: column; gap: 12px; overflow-y: auto;">
+          <div style="background: rgba(240, 165, 0, 0.1); border: 1px solid #f0a500; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 14px; font-weight: 800; color: #ffffff;" id="aiResultTitle">Judul Video</div>
+              <div style="font-size: 11px; color: var(--text-muted);" id="aiResultMeta">5 Adegan • 30 Detik • Rasio 9:16</div>
+            </div>
+            <div id="aiResultAudioBadge" style="font-size: 11px; font-weight: 700; padding: 4px 8px; background: rgba(0, 61, 165, 0.4); border-radius: 6px; color: #ffffff;">
+              🎵 BGM Terpilih
+            </div>
+          </div>
+
+          <div style="font-size: 12px; font-weight: 700; color: var(--text-main); margin-top: 4px;">Storyboard Alur Adegan:</div>
+          <div id="aiStoryboardCards" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Storyboard cards injected dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btnCancelAiModal">Tutup</button>
+        <button type="button" class="btn btn-primary" id="btnRunAiGenerate">🚀 Rancang Proyek AI</button>
+        <button type="button" class="btn btn-primary" id="btnApplyAiProject" style="display: none;">Buka & Terapkan di Editor</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Scene Revision Modal (Phase 3) -->
+  <div class="modal-backdrop" id="aiRevisionModal" role="dialog" aria-modal="true" aria-labelledby="aiRevTitle">
+    <div class="modal-dialog" style="max-width: 540px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 18px;">⚡</span>
+          <h2 id="aiRevTitle" style="font-size: 15px; font-weight: 700;">Revisi Cepat dengan AI</h2>
+        </div>
+        <button type="button" class="btn btn-icon" id="btnCloseAiRevModal" aria-label="Tutup jendela">✕</button>
+      </div>
+
+      <div class="modal-body" style="gap: 12px;">
+        <div class="form-group">
+          <label class="form-label" for="aiRevTargetScene">Target Adegan yang Direvisi</label>
+          <select id="aiRevTargetScene" class="form-select">
+            <option value="auto">Deteksi Otomatis dari Instruksi</option>
+            <!-- Injected dynamically -->
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="aiRevPromptInput">Instruksi Revisi Spesifik</label>
+          <textarea id="aiRevPromptInput" class="form-textarea" rows="3" placeholder="Contoh: Buat scene pertama lebih dramatis, ganti piala juara, atau ubah durasi menjadi 4 detik..."></textarea>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+          <button type="button" class="btn btn-secondary btn-mini ai-rev-chip" data-prompt="Buat teks headline lebih besar">Perbesar Teks</button>
+          <button type="button" class="btn btn-secondary btn-mini ai-rev-chip" data-prompt="Ganti background scene lebih dramatis">Background Dramatis</button>
+          <button type="button" class="btn btn-secondary btn-mini ai-rev-chip" data-prompt="Ubah animasi elemen menjadi lebih smooth">Animasi Smooth</button>
+          <button type="button" class="btn btn-secondary btn-mini ai-rev-chip" data-prompt="Buat versi landscape 16:9">Jadikan Landscape</button>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btnCancelAiRevModal">Batal</button>
+        <button type="button" class="btn btn-primary" id="btnApplyAiRevision">Terapkan Revisi (Undoable)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Voice Cloning Modal (Phase 4C) -->
+  <div class="modal-backdrop" id="voiceCloneModal" role="dialog" aria-modal="true" aria-labelledby="cloneModalTitle">
+    <div class="modal-dialog" style="max-width: 620px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 18px;">🎙️</span>
+          <h2 id="cloneModalTitle" style="font-size: 15px; font-weight: 700;">Kloning Suara & Custom Voice (ElevenLabs)</h2>
+        </div>
+        <button type="button" class="btn btn-icon" id="btnCloseCloneModal" aria-label="Tutup jendela">✕</button>
+      </div>
+
+      <div class="modal-body" style="gap: 14px; max-height: 75vh; overflow-y: auto;">
+        <!-- Intro Note -->
+        <div style="font-size: 11px; color: var(--text-muted); background: var(--bg-card); padding: 8px 12px; border-radius: 6px; border-left: 3px solid #f0a500;">
+          Unggah rekaman sampel suara bersih untuk membuat karakter suara unik Anda sendiri. Suara ini dapat digunakan untuk narasi adegan video motion graphic.
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="inpCloneVoiceName">Nama Karakter Suara <span style="color: #ef4444;">*</span></label>
+          <input type="text" id="inpCloneVoiceName" class="form-input" placeholder="Contoh: Kang Erwin - Komentator Sunda">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="inpCloneVoiceDesc">Deskripsi / Gaya Bicara</label>
+          <input type="text" id="inpCloneVoiceDesc" class="form-input" placeholder="Contoh: Nada lantang, bersemangat, khas pembawa acara olahraga">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="inpCloneSpeakerName">Nama Pemilik Suara Asli <span style="color: #ef4444;">*</span></label>
+          <input type="text" id="inpCloneSpeakerName" class="form-input" placeholder="Contoh: Erwin Maulana">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Sampel Rekaman Audio (WAV / MP3) <span style="color: #ef4444;">*</span></label>
+          <div style="border: 2px dashed var(--border-color); border-radius: 8px; padding: 14px; text-align: center; cursor: pointer; background: var(--bg-input);" id="dropZoneCloneAudio">
+            <input type="file" id="fileCloneAudioSample" accept=".mp3,.wav,.ogg,.m4a" style="display: none;">
+            <div style="font-size: 24px; margin-bottom: 4px;">🎵</div>
+            <div style="font-size: 12px; font-weight: 600; color: var(--text-main);" id="lblCloneAudioFile">
+              Klik atau seret file rekaman sampel suara ke sini
+            </div>
+            <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">
+              Mendukung MP3 / WAV (minimal 10 detik rekaman bersih, maks 10MB)
+            </div>
+          </div>
+        </div>
+
+        <!-- Mandatory Consent & Rights Declaration Card -->
+        <div style="background: rgba(240, 165, 0, 0.08); border: 1px solid rgba(240, 165, 0, 0.35); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: flex-start; gap: 8px;">
+            <input type="checkbox" id="chkCloneConsent" style="accent-color: #f0a500; width: 18px; height: 18px; margin-top: 2px; cursor: pointer;">
+            <label for="chkCloneConsent" style="font-size: 11px; font-weight: 600; color: var(--text-main); cursor: pointer; line-height: 1.45;">
+              Saya secara sadar menyatakan dan menjamin bahwa saya memiliki izin tertulis, hak cipta, dan persetujuan eksplisit dari pemilik suara yang bersangkutan untuk mengunggah sampel ini dan mengkloning karakteristik suaranya.
+            </label>
+          </div>
+          <div style="font-size: 10px; color: var(--text-dim); padding-left: 26px;">
+            ⚠️ <strong>Ketentuan Etika & Privasi:</strong> Dilarang keras mengkloning suara tokoh publik, pejabat, selebriti, atau individu lain tanpa persetujuan sah. Data suara diproses sesuai kebijakan privasi dan audit trail.
+          </div>
+        </div>
+
+        <div id="cloneProgressNotice" style="display: none; font-size: 12px; color: #f0a500; text-align: center; font-weight: 600;">
+          Sedang memproses dan mendaftarkan custom voice ke provider...
+        </div>
+
+        <!-- Registered Custom Voices Section -->
+        <div style="border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 4px;">
+          <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px;">
+            Daftar Suara Kustom Tersimpan
+          </div>
+          <div id="customVoiceListContainer" style="display: flex; flex-direction: column; gap: 6px;">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btnCancelCloneModal">Tutup</button>
+        <button type="button" class="btn btn-primary" id="btnSubmitVoiceClone">🚀 Buat Custom Voice</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div class="toast-notice" id="toastNotice" role="status" aria-live="polite"></div>
 
-  <!-- Application Script (Bundled for seamless local file:// and web server execution) -->
+  <!-- Application Script (Bundled for seamless browser execution) -->
   <script src="app.bundle.js"></script>
 </body>
 

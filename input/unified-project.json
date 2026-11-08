@@ -1,0 +1,384 @@
+{
+  "version": "1.0.0",
+  "id": "proj_1794136692209_it6j7",
+  "name": "Persib Bandung Juara",
+  "videoTitle": "Persib Bandung Juara",
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "fps": 30,
+  "totalDuration": 30,
+  "aspectRatio": "9:16",
+  "background": {
+    "type": "theme",
+    "value": "radial-gradient(ellipse 95% 65% at 50% 18%, rgba(0, 61, 165, 0.45) 0%, #080d1a 60%, #0a0a0a 100%)"
+  },
+  "theme": {
+    "colors": {
+      "primary": "#003da5",
+      "secondary": "#0a0a0a",
+      "text": "#ffffff",
+      "accent": "#f0a500"
+    },
+    "fonts": {
+      "title": "'Bebas Neue', 'Poppins', sans-serif",
+      "body": "'Inter', sans-serif"
+    }
+  },
+  "audio": {
+    "enabled": true,
+    "assetId": "aud_crowd_celebration",
+    "bgmUrl": "/public/audio/sfx/crowd_goal_cheer.mp3",
+    "volume": 0.85,
+    "muted": false,
+    "startPosition": 0,
+    "duration": 0
+  },
+  "scenes": [
+    {
+      "id": "sc_ai_1",
+      "name": "Intro Identitas",
+      "order": 1,
+      "startTime": 0,
+      "startFrame": 0,
+      "duration": 6,
+      "durationInFrames": 180,
+      "transition": {
+        "type": "slash",
+        "direction": "right",
+        "duration": 0.5
+      },
+      "background": "",
+      "elements": [
+        {
+          "id": "el_ai_1_logo",
+          "type": "svg",
+          "name": "Perisai Lambang Persib",
+          "content": "",
+          "assetUrl": "",
+          "assetId": "ast_persib_shield",
+          "fitMode": "contain",
+          "position": {
+            "x": 440,
+            "y": 538
+          },
+          "size": {
+            "width": 200,
+            "height": 240
+          },
+          "rotation": 0,
+          "scale": 1,
+          "opacity": 1,
+          "zIndex": 1,
+          "visible": true,
+          "locked": false,
+          "styling": {},
+          "props": {
+            "componentId": "svg_persib_shield"
+          },
+          "animation": {
+            "type": "scale",
+            "delay": 0.2,
+            "duration": 0.6,
+            "easing": "power2.out",
+            "startFrame": 6,
+            "repeat": 0
+          }
+        },
+        {
+          "id": "el_ai_1_title",
+          "type": "text",
+          "name": "Judul Pembuka",
+          "content": "Persib Bandung Juara",
+          "assetUrl": "",
+          "assetId": "",
+          "fitMode": "contain",
+          "position": {
+            "x": 80,
+            "y": 1056
+          },
+          "size": {
+            "width": 920,
+            "height": 160
+          },
+          "rotation": 0,
+          "scale": 1,
+          "opacity": 1,
+          "zIndex": 2,
+          "visible": true,
+          "locked": false,
+          "styling": {
+            "fontSize": 64,
+            "fontWeight": 900,
+            "color": "#ffffff"
+          },
+          "props": {},
+          "animation": {
+            "type": "slide",
+            "delay": 0.3,
+            "duration": 0.5,
+            "easing": "power2.out",
+            "startFrame": 9,
+            "repeat": 0
+          }
+        }
+      ],
+      "title": "PEMBUKA",
+      "narration": "Halo Bobotoh! Inilah tayangan resmi kabar terkini kebanggaan Jawa Barat, Persib Bandung.",
+      "screenText": "PERSIB BANDUNG JUARA",
+      "highlightWord": "PERSIB",
+      "dataValue": "",
+      "dataLabel": "",
+      "visualAction": ""
+    },
+    {
+      "id": "sc_ai_2",
+      "name": "Hasil Skor Akhir",
+      "order": 2,
+      "startTime": 6,
+      "startFrame": 180,
+      "duration": 6,
+      "durationInFrames": 180,
+      "transition": {
+        "type": "slash",
+        "direction": "left",
+        "duration": 0.4
+      },
+      "background": "",
+      "elements": [
+        {
+          "id": "el_ai_2_board",
+          "type": "svg",
+          "name": "Papan Skor Stadion",
+          "content": "",
+          "assetUrl": "",
+          "assetId": "ast_scoreboard_stadium",
+          "fitMode": "contain",
+          "position": {
+            "x": 170,
+            "y": 576
+          },
+          "size": {
+            "width": 740,
+            "height": 320
+          },
+          "rotation": 0,
+          "scale": 1,
+          "opacity": 1,
+          "zIndex": 1,
+          "visible": true,
+          "locked": false,
+          "styling": {},
+          "props": {
+            "componentId": "svg_scoreboard_stadium"
+          },
+          "animation": {
+            "type": "scale",
+            "delay": 0.1,
+            "duration": 0.6,
+            "easing": "power2.out",
+            "startFrame": 3,
+            "repeat": 0
+          }
+        }
+      ],
+      "title": "SKOR AKHIR",
+      "narration": "Pertandingan sengit berakhir manis. Pangeran Biru sukses mengunci poin penuh dengan skor akhir 2-1.",
+      "screenText": "PERSIB UNGGUL 2-1 DI KANDANG",
+      "highlightWord": "2-1",
+      "dataValue": "",
+      "dataLabel": "",
+      "visualAction": ""
+    },
+    {
+      "id": "sc_ai_3",
+      "name": "Sorotan Data & Taktik",
+      "order": 3,
+      "startTime": 12,
+      "startFrame": 360,
+      "duration": 6,
+      "durationInFrames": 180,
+      "transition": {
+        "type": "fade",
+        "direction": "right",
+        "duration": 0.4
+      },
+      "background": "",
+      "elements": [
+        {
+          "id": "el_ai_3_radar",
+          "type": "svg",
+          "name": "Radar Taktik Antar Lini",
+          "content": "",
+          "assetUrl": "",
+          "assetId": "ast_duel_radar",
+          "fitMode": "contain",
+          "position": {
+            "x": 340,
+            "y": 614
+          },
+          "size": {
+            "width": 400,
+            "height": 400
+          },
+          "rotation": 0,
+          "scale": 1,
+          "opacity": 1,
+          "zIndex": 1,
+          "visible": true,
+          "locked": false,
+          "styling": {},
+          "props": {
+            "componentId": "svg_duel_radar"
+          },
+          "animation": {
+            "type": "rotate",
+            "delay": 0.1,
+            "duration": 0.7,
+            "easing": "power2.out",
+            "startFrame": 3,
+            "repeat": 0
+          }
+        }
+      ],
+      "title": "STATISTIK DUEL",
+      "narration": "Statistik pertandingan membuktikan keunggulan lini tengah dan agresivitas serangan sayap sepanjang 90 menit.",
+      "screenText": "DOMINASI PENGUASAAN BOLA & SERANGAN",
+      "highlightWord": "DOMINASI",
+      "dataValue": "",
+      "dataLabel": "",
+      "visualAction": ""
+    },
+    {
+      "id": "sc_ai_4",
+      "name": "Penghargaan Terbaik",
+      "order": 4,
+      "startTime": 18,
+      "startFrame": 540,
+      "duration": 6,
+      "durationInFrames": 180,
+      "transition": {
+        "type": "slide",
+        "direction": "up",
+        "duration": 0.4
+      },
+      "background": "",
+      "elements": [
+        {
+          "id": "el_ai_4_badge",
+          "type": "svg",
+          "name": "Bintang MOTM",
+          "content": "",
+          "assetUrl": "",
+          "assetId": "ast_motm_badge",
+          "fitMode": "contain",
+          "position": {
+            "x": 410,
+            "y": 653
+          },
+          "size": {
+            "width": 260,
+            "height": 260
+          },
+          "rotation": 0,
+          "scale": 1,
+          "opacity": 1,
+          "zIndex": 1,
+          "visible": true,
+          "locked": false,
+          "styling": {},
+          "props": {
+            "componentId": "svg_motm_badge"
+          },
+          "animation": {
+            "type": "scale",
+            "delay": 0.1,
+            "duration": 0.6,
+            "easing": "power2.out",
+            "startFrame": 3,
+            "repeat": 0
+          }
+        }
+      ],
+      "title": "MAN OF THE MATCH",
+      "narration": "Aksi gemilang di atas lapangan membuahkan gelar pemain terbaik dengan kontribusi gol dan umpan kunci.",
+      "screenText": "KONTRIBUSI NYATA PEMAIN TERBAIK",
+      "highlightWord": "TERBAIK",
+      "dataValue": "",
+      "dataLabel": "",
+      "visualAction": ""
+    },
+    {
+      "id": "sc_ai_5",
+      "name": "Penutup Kemenangan",
+      "order": 5,
+      "startTime": 24,
+      "startFrame": 720,
+      "duration": 6,
+      "durationInFrames": 180,
+      "transition": {
+        "type": "slash",
+        "direction": "right",
+        "duration": 0.5
+      },
+      "background": "",
+      "elements": [
+        {
+          "id": "el_ai_5_trophy",
+          "type": "svg",
+          "name": "Piala Juara Emas",
+          "content": "",
+          "assetUrl": "",
+          "assetId": "ast_trophy_ladder",
+          "fitMode": "contain",
+          "position": {
+            "x": 390,
+            "y": 614
+          },
+          "size": {
+            "width": 300,
+            "height": 380
+          },
+          "rotation": 0,
+          "scale": 1,
+          "opacity": 1,
+          "zIndex": 1,
+          "visible": true,
+          "locked": false,
+          "styling": {},
+          "props": {
+            "componentId": "svg_trophy_ladder"
+          },
+          "animation": {
+            "type": "scale",
+            "delay": 0.1,
+            "duration": 0.6,
+            "easing": "power2.out",
+            "startFrame": 3,
+            "repeat": 0
+          }
+        }
+      ],
+      "title": "JUARA SEJATI",
+      "narration": "Tiga poin berharga untuk menjaga asa di papan atas klasemen. Kawal terus perjuangan Pangeran Biru sampai tuntas!",
+      "screenText": "LANGKAH MANTAP MENUJU TANGGA JUARA",
+      "highlightWord": "JUARA",
+      "dataValue": "",
+      "dataLabel": "",
+      "visualAction": ""
+    }
+  ],
+  "metadata": {
+    "tabId": "post_match",
+    "category": "Hasil Pertandingan",
+    "angle": "",
+    "audience": "Bobotoh",
+    "goal": "Rayakan Kemenangan",
+    "tone": "Bangga & Bersemangat",
+    "preset": "preset_b",
+    "metaphor": "card",
+    "source": "gemini_creative_director",
+    "originalPrompt": "Buat motion graphic kemenangan Persib Bandung skor 2-1 di stadion GBLA durasi 30 detik"
+  }
+}

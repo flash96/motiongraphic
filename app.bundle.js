@@ -1,5 +1,680 @@
 "use strict";
 (() => {
+  // project-schema.js
+  var CURRENT_SCHEMA_VERSION = "1.0.0";
+  var ELEMENT_TYPES = ["text", "image", "video", "shape", "logo", "audio", "component", "svg"];
+  var ANIMATION_TYPES = ["none", "fade", "slide", "scale", "rotate", "counter"];
+  var TRANSITION_TYPES = ["none", "fade", "slide", "slash"];
+  function createDefaultProject(overrides = {}) {
+    const fps = overrides.fps || 30;
+    const duration = overrides.totalDuration || overrides.duration || 30;
+    const canvas = overrides.canvas || { width: 1080, height: 1920 };
+    const project = {
+      version: CURRENT_SCHEMA_VERSION,
+      id: overrides.id || `proj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      name: overrides.name || overrides.topic || "Persib Motion Graphic",
+      videoTitle: overrides.videoTitle || overrides.topic || "Persib Bandung",
+      canvas: {
+        width: Number(canvas.width) || 1080,
+        height: Number(canvas.height) || 1920
+      },
+      fps: Number(fps) || 30,
+      totalDuration: Number(duration) || 30,
+      aspectRatio: overrides.aspectRatio || "9:16",
+      background: overrides.background || {
+        type: "theme",
+        value: "radial-gradient(ellipse 95% 65% at 50% 18%, rgba(0, 61, 165, 0.45) 0%, #080d1a 60%, #0a0a0a 100%)"
+      },
+      theme: {
+        colors: {
+          primary: overrides.theme?.colors?.primary || overrides.colors?.primary || "#003da5",
+          secondary: overrides.theme?.colors?.secondary || overrides.colors?.secondary || "#0a0a0a",
+          text: overrides.theme?.colors?.text || overrides.colors?.text || "#ffffff",
+          accent: overrides.theme?.colors?.accent || overrides.colors?.accent || "#f0a500"
+        },
+        fonts: {
+          title: overrides.theme?.fonts?.title || "'Bebas Neue', 'Poppins', sans-serif",
+          body: overrides.theme?.fonts?.body || "'Inter', sans-serif"
+        }
+      },
+      audio: overrides.audio ? {
+        enabled: Boolean(overrides.audio.enabled),
+        assetId: overrides.audio.assetId || "",
+        bgmUrl: overrides.audio.bgmUrl || "",
+        volume: overrides.audio.volume !== void 0 ? Number(overrides.audio.volume) : 0.8,
+        muted: Boolean(overrides.audio.muted),
+        startPosition: Number(overrides.audio.startPosition) || 0,
+        duration: Number(overrides.audio.duration) || 0
+      } : {
+        enabled: false,
+        assetId: "",
+        bgmUrl: "",
+        volume: 0.8,
+        muted: false,
+        startPosition: 0,
+        duration: 0
+      },
+      scenes: [],
+      metadata: {
+        tabId: overrides.tabId || overrides.id || "post_match",
+        category: overrides.category || "Hasil Pertandingan",
+        angle: overrides.angle || "",
+        audience: overrides.audience || "Bobotoh",
+        goal: overrides.goal || "Rayakan Kemenangan",
+        tone: overrides.tone || "Bangga & Bersemangat",
+        preset: overrides.preset || "preset_b",
+        metaphor: overrides.metaphor || "card",
+        ...overrides.metadata || {}
+      }
+    };
+    if (Array.isArray(overrides.scenes) && overrides.scenes.length > 0) {
+      project.scenes = overrides.scenes.map((s, idx) => sanitizeScene(s, idx, project.fps));
+    } else {
+      project.scenes = [
+        sanitizeScene({
+          id: "sc_1",
+          name: overrides.videoTitle || overrides.name || "Adegan Pembuka",
+          duration: project.totalDuration,
+          elements: []
+        }, 0, project.fps)
+      ];
+    }
+    recalculateSceneTimings(project);
+    return project;
+  }
+  function sanitizeElement(el, idx, sceneId, fps = 30) {
+    const elemId = el.id ? String(el.id) : `el_${sceneId}_${idx + 1}_${Math.random().toString(36).substring(2, 6)}`;
+    const type = ELEMENT_TYPES.includes(el.type) ? el.type : "text";
+    const element = {
+      id: elemId,
+      type,
+      name: el.name || `${type}_${idx + 1}`,
+      content: el.content !== void 0 ? String(el.content) : "",
+      assetUrl: el.assetUrl || "",
+      assetId: el.assetId || "",
+      fitMode: el.fitMode || "contain",
+      position: {
+        x: Number(el.position?.x) || 0,
+        y: Number(el.position?.y) || 0
+      },
+      size: {
+        width: el.size?.width !== void 0 ? el.size.width : "auto",
+        height: el.size?.height !== void 0 ? el.size.height : "auto"
+      },
+      rotation: Number(el.rotation) || 0,
+      scale: Number(el.scale) || 1,
+      opacity: el.opacity !== void 0 ? Math.max(0, Math.min(1, Number(el.opacity))) : 1,
+      zIndex: Number(el.zIndex) || idx + 1,
+      visible: el.visible !== false,
+      locked: el.locked === true,
+      styling: { ...el.styling || {} },
+      props: { ...el.props || {} }
+    };
+    if (el.animation) {
+      const animType = ANIMATION_TYPES.includes(el.animation.type) ? el.animation.type : "none";
+      element.animation = {
+        type: animType,
+        delay: Number(el.animation.delay) || 0,
+        duration: Number(el.animation.duration) || 0.5,
+        easing: el.animation.easing || "power2.out",
+        from: el.animation.from ? { ...el.animation.from } : void 0,
+        to: el.animation.to ? { ...el.animation.to } : void 0,
+        startFrame: el.animation.startFrame !== void 0 ? Number(el.animation.startFrame) : Math.round((Number(el.animation.delay) || 0) * fps),
+        repeat: Number(el.animation.repeat) || 0
+      };
+    }
+    return element;
+  }
+  function sanitizeScene(scene, idx, fps = 30) {
+    const sceneId = scene.id !== void 0 ? String(scene.id) : String(idx + 1);
+    const duration = Math.max(0.5, Number(scene.duration) || 5);
+    const transitionType = scene.transition?.type && TRANSITION_TYPES.includes(scene.transition.type) ? scene.transition.type : "none";
+    const sanitized = {
+      id: sceneId,
+      name: scene.name || scene.title || `Adegan ${idx + 1}`,
+      order: scene.order !== void 0 ? Number(scene.order) : idx + 1,
+      startTime: Number(scene.startTime) || 0,
+      startFrame: Number(scene.startFrame) || 0,
+      duration,
+      durationInFrames: Math.round(duration * fps),
+      transition: {
+        type: transitionType,
+        direction: scene.transition?.direction || "right",
+        duration: Number(scene.transition?.duration) || 0.4
+      },
+      background: scene.background || "",
+      elements: [],
+      // Retain legacy fields for template choreography compatibility
+      title: scene.title || scene.name || `Adegan ${idx + 1}`,
+      narration: scene.narration || "",
+      screenText: scene.screenText || "",
+      highlightWord: scene.highlightWord || "",
+      dataValue: scene.dataValue || "",
+      dataLabel: scene.dataLabel || "",
+      visualAction: scene.visualAction || ""
+    };
+    if (scene.voiceover) {
+      sanitized.voiceover = {
+        enabled: scene.voiceover.enabled !== false,
+        provider: scene.voiceover.provider || "google",
+        voiceId: scene.voiceover.voiceId || "id-ID-Standard-A",
+        isCustomVoice: Boolean(scene.voiceover.isCustomVoice),
+        speakerName: scene.voiceover.speakerName || "",
+        language: scene.voiceover.language || "id-ID",
+        parameters: {
+          speakingRate: Number(scene.voiceover.parameters?.speakingRate) || 1,
+          pitch: Number(scene.voiceover.parameters?.pitch) || 0,
+          stability: Number(scene.voiceover.parameters?.stability) || 0.75,
+          ...scene.voiceover.parameters || {}
+        },
+        assetId: scene.voiceover.assetId || "",
+        audioUrl: scene.voiceover.audioUrl || "",
+        sourceText: scene.voiceover.sourceText || "",
+        duration: Number(scene.voiceover.duration) || 0,
+        status: scene.voiceover.status || (scene.voiceover.audioUrl ? "ready" : "idle"),
+        generatedAt: scene.voiceover.generatedAt || "",
+        timingMetadata: scene.voiceover.timingMetadata || null
+      };
+      if (sanitized.voiceover.audioUrl && sanitized.voiceover.sourceText && sanitized.narration && sanitized.voiceover.sourceText.trim() !== sanitized.narration.trim()) {
+        sanitized.voiceover.status = "outdated";
+      }
+    }
+    if (scene.captions) {
+      sanitized.captions = {
+        enabled: scene.captions.enabled !== false,
+        language: scene.captions.language || "id-ID",
+        sourceText: scene.captions.sourceText || sanitized.narration || "",
+        style: {
+          preset: scene.captions.style?.preset || "persib_gold",
+          fontSize: Number(scene.captions.style?.fontSize) || 34,
+          textColor: scene.captions.style?.textColor || "#ffffff",
+          highlightColor: scene.captions.style?.highlightColor || "#f0a500",
+          backgroundColor: scene.captions.style?.backgroundColor || "rgba(10, 14, 24, 0.88)",
+          position: scene.captions.style?.position || "bottom",
+          textAlign: scene.captions.style?.textAlign || "center",
+          textShadow: scene.captions.style?.textShadow || "0 2px 8px rgba(0, 0, 0, 0.9)",
+          activeGlow: scene.captions.style?.activeGlow || "0 0 16px rgba(240, 165, 0, 0.75)",
+          ...scene.captions.style || {}
+        },
+        segments: Array.isArray(scene.captions.segments) ? scene.captions.segments.map((seg, sIdx) => ({
+          id: seg.id || `seg_${sIdx}`,
+          start: Number(seg.start) || 0,
+          end: Number(seg.end) || 0,
+          duration: Number(seg.duration) || Math.max(0, (Number(seg.end) || 0) - (Number(seg.start) || 0)),
+          text: String(seg.text || ""),
+          words: Array.isArray(seg.words) ? seg.words.map((w, wIdx) => ({
+            word: String(w.word || ""),
+            start: Number(w.start) || 0,
+            end: Number(w.end) || 0,
+            order: w.order !== void 0 ? Number(w.order) : wIdx,
+            duration: Number(w.duration) || Math.max(0, (Number(w.end) || 0) - (Number(w.start) || 0))
+          })) : []
+        })) : [],
+        generationMethod: scene.captions.generationMethod || "forced_alignment",
+        status: scene.captions.status || "ready",
+        generatedAt: scene.captions.generatedAt || ""
+      };
+    }
+    if (Array.isArray(scene.elements)) {
+      sanitized.elements = scene.elements.map((el, elIdx) => sanitizeElement(el, elIdx, sceneId, fps));
+    }
+    return sanitized;
+  }
+  function recalculateSceneTimings(project) {
+    const fps = Number(project.fps) || 30;
+    let runningTime = 0;
+    project.scenes.forEach((scene, idx) => {
+      scene.order = idx + 1;
+      scene.startTime = runningTime;
+      scene.startFrame = Math.round(runningTime * fps);
+      scene.durationInFrames = Math.round(scene.duration * fps);
+      runningTime += scene.duration;
+    });
+    project.totalDuration = Math.round(runningTime * 100) / 100;
+    return project;
+  }
+  function validateProject(rawProject) {
+    const errors = [];
+    const warnings = [];
+    if (!rawProject || typeof rawProject !== "object") {
+      return {
+        valid: false,
+        errors: ["Project data must be a valid JSON object."],
+        warnings: [],
+        project: createDefaultProject()
+      };
+    }
+    if (!rawProject.version) {
+      warnings.push(`Missing version; assuming current schema version ${CURRENT_SCHEMA_VERSION}.`);
+    }
+    const width = Number(rawProject.canvas?.width);
+    const height = Number(rawProject.canvas?.height);
+    if (!width || width <= 0 || !height || height <= 0) {
+      errors.push(`Invalid canvas dimensions: width (${width}) and height (${height}) must be positive numbers.`);
+    }
+    const fps = Number(rawProject.fps);
+    if (!fps || fps <= 0 || fps > 120) {
+      errors.push(`Invalid FPS: ${fps}. Must be between 1 and 120.`);
+    }
+    if (!Array.isArray(rawProject.scenes) || rawProject.scenes.length === 0) {
+      errors.push("Project must contain at least one scene.");
+    }
+    const sceneIds = /* @__PURE__ */ new Set();
+    const elementIds = /* @__PURE__ */ new Set();
+    if (Array.isArray(rawProject.scenes)) {
+      rawProject.scenes.forEach((scene, sIdx) => {
+        const sId = String(scene.id ?? sIdx + 1);
+        if (sceneIds.has(sId)) {
+          errors.push(`Duplicate scene ID found: "${sId}". Scene IDs must be unique.`);
+        }
+        sceneIds.add(sId);
+        const sDur = Number(scene.duration);
+        if (isNaN(sDur) || sDur <= 0) {
+          errors.push(`Scene "${sId}" has invalid duration (${scene.duration}). Must be > 0.`);
+        }
+        if (Array.isArray(scene.elements)) {
+          scene.elements.forEach((el, eIdx) => {
+            const eId = String(el.id ?? `${sId}_${eIdx}`);
+            if (elementIds.has(eId)) {
+              warnings.push(`Duplicate element ID "${eId}". Element IDs should be unique across the project.`);
+            }
+            elementIds.add(eId);
+            if (el.type && !ELEMENT_TYPES.includes(el.type)) {
+              warnings.push(`Unknown element type "${el.type}" in scene "${sId}". Defaulting to text.`);
+            }
+          });
+        }
+        if (scene.voiceover) {
+          if (scene.voiceover.enabled && scene.voiceover.status === "ready" && !scene.voiceover.audioUrl) {
+            warnings.push(`Scene "${sId}" voiceover is enabled and marked ready but has no audioUrl.`);
+          }
+          if (scene.voiceover.audioUrl && scene.voiceover.sourceText && scene.narration && scene.voiceover.sourceText.trim() !== scene.narration.trim()) {
+            warnings.push(`Scene "${sId}" voiceover audio is outdated: narration text has changed.`);
+          }
+        }
+        if (scene.captions) {
+          if (scene.captions.enabled && (!Array.isArray(scene.captions.segments) || scene.captions.segments.length === 0)) {
+            warnings.push(`Scene "${sId}" has captions enabled but segments list is empty.`);
+          }
+          if (Array.isArray(scene.captions.segments)) {
+            scene.captions.segments.forEach((seg, sIdx2) => {
+              if (Number(seg.start) > Number(seg.end)) {
+                warnings.push(`Scene "${sId}" caption segment ${sIdx2} has start (${seg.start}) greater than end (${seg.end}).`);
+              }
+            });
+          }
+        }
+      });
+    }
+    const normalized = createDefaultProject({
+      ...rawProject,
+      fps: isNaN(fps) || fps <= 0 ? 30 : fps,
+      canvas: {
+        width: width > 0 ? width : 1080,
+        height: height > 0 ? height : 1920
+      }
+    });
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+      project: normalized
+    };
+  }
+  function migrateLegacyTemplateToProject(legacyConfig) {
+    if (!legacyConfig || typeof legacyConfig !== "object") {
+      return createDefaultProject();
+    }
+    if (legacyConfig.version && Array.isArray(legacyConfig.scenes) && legacyConfig.canvas) {
+      return validateProject(legacyConfig).project;
+    }
+    const tabId = legacyConfig.id || "post_match";
+    const fps = 30;
+    const legacyScenes = Array.isArray(legacyConfig.scenes) ? legacyConfig.scenes : [];
+    const convertedScenes = legacyScenes.map((s, idx) => {
+      const sceneId = `sc_${idx + 1}`;
+      const sDuration = Number(s.duration) || 5;
+      const elements = [];
+      elements.push({
+        id: `${sceneId}_badge`,
+        type: "text",
+        name: "Scene Badge",
+        content: s.title || `ADEGAN ${idx + 1}`,
+        position: { x: 80, y: 180 },
+        size: { width: 920, height: 40 },
+        zIndex: 10,
+        styling: {
+          fontSize: 22,
+          fontWeight: 800,
+          color: legacyConfig.colors?.accent || "#f0a500",
+          letterSpacing: 3,
+          textTransform: "uppercase"
+        },
+        animation: {
+          type: "fade",
+          delay: 0,
+          duration: 0.3
+        }
+      });
+      if (s.screenText) {
+        elements.push({
+          id: `${sceneId}_headline`,
+          type: "text",
+          name: "Screen Text Headline",
+          content: s.screenText,
+          position: { x: 80, y: 230 },
+          size: { width: 920, height: 180 },
+          zIndex: 20,
+          styling: {
+            fontFamily: "'Bebas Neue', 'Poppins', sans-serif",
+            fontSize: 84,
+            fontWeight: 900,
+            color: legacyConfig.colors?.text || "#ffffff",
+            accentColor: legacyConfig.colors?.accent || "#f0a500",
+            lineHeight: 1.05
+          },
+          props: {
+            highlightWord: s.highlightWord || ""
+          },
+          animation: {
+            type: "slide",
+            delay: 0.1,
+            duration: 0.5,
+            from: { y: 60, opacity: 0 },
+            to: { y: 0, opacity: 1 }
+          }
+        });
+      }
+      elements.push({
+        id: `${sceneId}_theme_visual`,
+        type: "component",
+        name: `Visual Stage ${tabId} Scene ${idx + 1}`,
+        content: s.visualAction || "",
+        position: { x: 90, y: 440 },
+        size: { width: 900, height: 800 },
+        zIndex: 15,
+        props: {
+          tabId,
+          sceneIndex: idx + 1,
+          visualAction: s.visualAction || "",
+          dataValue: s.dataValue || "",
+          dataLabel: s.dataLabel || ""
+        },
+        animation: {
+          type: "scale",
+          delay: 0.15,
+          duration: 0.6
+        }
+      });
+      if (s.dataValue && s.dataValue.trim() !== "") {
+        elements.push({
+          id: `${sceneId}_data_pill`,
+          type: "component",
+          name: "Data Milestone Card",
+          content: s.dataValue,
+          position: { x: 190, y: 1300 },
+          size: { width: 700, height: 160 },
+          zIndex: 25,
+          styling: {
+            backgroundColor: "rgba(10, 15, 26, 0.94)",
+            borderColor: legacyConfig.colors?.accent || "#f0a500",
+            borderWidth: 2,
+            borderRadius: 20
+          },
+          props: {
+            value: s.dataValue,
+            label: s.dataLabel || "Data Terverifikasi"
+          },
+          animation: {
+            type: "slide",
+            delay: 0.3,
+            duration: 0.5,
+            from: { y: 40, opacity: 0 },
+            to: { y: 0, opacity: 1 }
+          }
+        });
+      }
+      if (s.narration) {
+        elements.push({
+          id: `${sceneId}_subtitle`,
+          type: "text",
+          name: "Narration Subtitle",
+          content: s.narration,
+          position: { x: 80, y: 1540 },
+          size: { width: 920, height: 150 },
+          zIndex: 20,
+          styling: {
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 32,
+            lineHeight: 1.45,
+            color: legacyConfig.colors?.text || "#ffffff",
+            textAlign: "center"
+          },
+          props: {
+            highlightWord: s.highlightWord || ""
+          },
+          animation: {
+            type: "fade",
+            delay: 0.2,
+            duration: 0.4
+          }
+        });
+      }
+      return {
+        id: sceneId,
+        name: s.title || `Adegan ${idx + 1}`,
+        order: idx + 1,
+        duration: sDuration,
+        transition: {
+          type: idx > 0 ? "slash" : "none",
+          direction: idx % 2 === 0 ? "right" : "left",
+          duration: 0.4
+        },
+        elements,
+        // Retain legacy template fields
+        title: s.title || `Adegan ${idx + 1}`,
+        narration: s.narration || "",
+        screenText: s.screenText || "",
+        highlightWord: s.highlightWord || "",
+        dataValue: s.dataValue || "",
+        dataLabel: s.dataLabel || "",
+        visualAction: s.visualAction || ""
+      };
+    });
+    const project = createDefaultProject({
+      id: `persib_${tabId}`,
+      name: legacyConfig.name || legacyConfig.topic || "Persib Motion Studio",
+      videoTitle: legacyConfig.topic || "Persib Bandung",
+      canvas: { width: 1080, height: 1920 },
+      fps,
+      totalDuration: Number(legacyConfig.duration) || 30,
+      aspectRatio: "9:16",
+      theme: {
+        colors: {
+          primary: legacyConfig.colors?.primary || "#003da5",
+          secondary: legacyConfig.colors?.secondary || "#0a0a0a",
+          text: legacyConfig.colors?.text || "#ffffff",
+          accent: legacyConfig.colors?.accent || "#f0a500"
+        },
+        fonts: {
+          title: "'Bebas Neue', 'Poppins', sans-serif",
+          body: "'Inter', sans-serif"
+        }
+      },
+      metadata: {
+        tabId,
+        category: legacyConfig.category || "Hasil Pertandingan",
+        angle: legacyConfig.angle || "",
+        audience: legacyConfig.audience || "Bobotoh",
+        goal: legacyConfig.goal || "Rayakan Kemenangan",
+        tone: legacyConfig.tone || "Bangga & Bersemangat",
+        preset: legacyConfig.preset || "preset_b",
+        metaphor: legacyConfig.metaphor || "card",
+        badge: legacyConfig.badge || "",
+        icon: legacyConfig.icon || "\u26BD"
+      },
+      scenes: convertedScenes
+    });
+    return project;
+  }
+  function addScene(project, sceneData = {}, insertAfterIndex = -1) {
+    const newIndex = insertAfterIndex >= 0 ? insertAfterIndex + 1 : project.scenes.length;
+    const sceneId = sceneData.id || `sc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const fps = project.fps || 30;
+    const newScene = sanitizeScene({
+      id: sceneId,
+      name: sceneData.name || sceneData.title || `Adegan ${newIndex + 1}`,
+      duration: Number(sceneData.duration) || 5,
+      transition: sceneData.transition || { type: "slash", direction: "right", duration: 0.4 },
+      background: sceneData.background || "",
+      elements: sceneData.elements || [
+        {
+          id: `${sceneId}_headline`,
+          type: "text",
+          name: "Teks Judul",
+          content: sceneData.screenText || "JUDUL ADEGAN BARU",
+          position: { x: 80, y: 230 },
+          size: { width: 920, height: 180 },
+          zIndex: 10,
+          styling: { fontSize: 80, fontWeight: 900, color: project.theme?.colors?.text || "#ffffff" },
+          animation: { type: "slide", delay: 0.1, duration: 0.5 }
+        }
+      ],
+      title: sceneData.title || sceneData.name || `Adegan ${newIndex + 1}`,
+      narration: sceneData.narration || "",
+      screenText: sceneData.screenText || "JUDUL ADEGAN BARU",
+      highlightWord: sceneData.highlightWord || "",
+      dataValue: sceneData.dataValue || "",
+      dataLabel: sceneData.dataLabel || "",
+      visualAction: sceneData.visualAction || ""
+    }, newIndex, fps);
+    project.scenes.splice(newIndex, 0, newScene);
+    recalculateSceneTimings(project);
+    return newScene;
+  }
+  function deleteScene(project, sceneId) {
+    if (project.scenes.length <= 1) {
+      return false;
+    }
+    const idx = project.scenes.findIndex((s) => String(s.id) === String(sceneId));
+    if (idx === -1) return false;
+    project.scenes.splice(idx, 1);
+    recalculateSceneTimings(project);
+    return true;
+  }
+  function duplicateScene(project, sceneId) {
+    const idx = project.scenes.findIndex((s) => String(s.id) === String(sceneId));
+    if (idx === -1) return null;
+    const source = project.scenes[idx];
+    const newSceneId = `sc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const cloned = JSON.parse(JSON.stringify(source));
+    cloned.id = newSceneId;
+    cloned.name = `${source.name || source.title || "Adegan"} (Salinan)`;
+    cloned.title = cloned.name;
+    if (Array.isArray(cloned.elements)) {
+      cloned.elements = cloned.elements.map((el, eIdx) => ({
+        ...el,
+        id: `${newSceneId}_el_${eIdx + 1}_${Math.random().toString(36).substring(2, 5)}`
+      }));
+    }
+    project.scenes.splice(idx + 1, 0, cloned);
+    recalculateSceneTimings(project);
+    return cloned;
+  }
+  function reorderScenes(project, fromIndex, toIndex) {
+    if (fromIndex < 0 || fromIndex >= project.scenes.length) return false;
+    if (toIndex < 0 || toIndex >= project.scenes.length) return false;
+    if (fromIndex === toIndex) return true;
+    const [moved] = project.scenes.splice(fromIndex, 1);
+    project.scenes.splice(toIndex, 0, moved);
+    recalculateSceneTimings(project);
+    return true;
+  }
+  function addElement(project, sceneId, elementData = {}) {
+    const scene = project.scenes.find((s) => String(s.id) === String(sceneId));
+    if (!scene) return null;
+    const fps = project.fps || 30;
+    const elIdx = scene.elements.length;
+    const newEl = sanitizeElement(elementData, elIdx, sceneId, fps);
+    scene.elements.push(newEl);
+    return newEl;
+  }
+  function deleteElement(project, sceneId, elementId) {
+    const scene = project.scenes.find((s) => String(s.id) === String(sceneId));
+    if (!scene) return false;
+    const idx = scene.elements.findIndex((el) => String(el.id) === String(elementId));
+    if (idx === -1) return false;
+    scene.elements.splice(idx, 1);
+    return true;
+  }
+  function duplicateElement(project, sceneId, elementId) {
+    const scene = project.scenes.find((s) => String(s.id) === String(sceneId));
+    if (!scene) return null;
+    const source = scene.elements.find((el) => String(el.id) === String(elementId));
+    if (!source) return null;
+    const cloned = JSON.parse(JSON.stringify(source));
+    cloned.id = `el_${sceneId}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+    cloned.name = `${source.name || source.type} (Salinan)`;
+    cloned.position = {
+      x: (Number(source.position?.x) || 0) + 20,
+      y: (Number(source.position?.y) || 0) + 20
+    };
+    cloned.zIndex = (Number(source.zIndex) || 1) + 1;
+    scene.elements.push(cloned);
+    return cloned;
+  }
+  function setElementVisibility(project, sceneId, elementId, visible) {
+    const scene = project.scenes.find((s) => String(s.id) === String(sceneId));
+    if (!scene) return false;
+    const el = scene.elements.find((e) => String(e.id) === String(elementId));
+    if (!el) return false;
+    el.visible = Boolean(visible);
+    return true;
+  }
+  function setElementLock(project, sceneId, elementId, locked) {
+    const scene = project.scenes.find((s) => String(s.id) === String(sceneId));
+    if (!scene) return false;
+    const el = scene.elements.find((e) => String(e.id) === String(elementId));
+    if (!el) return false;
+    el.locked = Boolean(locked);
+    return true;
+  }
+  function updateSceneProperties(project, sceneId, updates = {}) {
+    const scene = project.scenes.find((s) => String(s.id) === String(sceneId));
+    if (!scene) return null;
+    if (updates.name !== void 0) {
+      scene.name = updates.name;
+      scene.title = updates.name;
+    }
+    if (updates.duration !== void 0) {
+      scene.duration = Math.max(0.5, Number(updates.duration) || 5);
+      recalculateSceneTimings(project);
+    }
+    if (updates.transition !== void 0) {
+      scene.transition = { ...scene.transition, ...updates.transition };
+    }
+    if (updates.background !== void 0) {
+      scene.background = updates.background;
+    }
+    if (updates.narration !== void 0) scene.narration = updates.narration;
+    if (updates.screenText !== void 0) scene.screenText = updates.screenText;
+    if (updates.highlightWord !== void 0) scene.highlightWord = updates.highlightWord;
+    if (updates.dataValue !== void 0) scene.dataValue = updates.dataValue;
+    if (updates.dataLabel !== void 0) scene.dataLabel = updates.dataLabel;
+    if (updates.visualAction !== void 0) scene.visualAction = updates.visualAction;
+    return scene;
+  }
+  function updateAudioProperties(project, audioUpdates = {}) {
+    if (!project.audio) {
+      project.audio = { enabled: false, bgmUrl: "", volume: 0.8, muted: false, startPosition: 0, duration: 0 };
+    }
+    project.audio = {
+      ...project.audio,
+      ...audioUpdates
+    };
+    return project.audio;
+  }
+
   // templates.js
   var PERSIB_TABS = {
     post_match: {
@@ -399,6 +1074,13 @@
   };
   var DEFAULT_TAB = "post_match";
   var DEFAULT_FRAMEWORK = PERSIB_TABS[DEFAULT_TAB];
+  var PERSIB_PROJECTS = {
+    post_match: migrateLegacyTemplateToProject(PERSIB_TABS.post_match),
+    weekly_recap: migrateLegacyTemplateToProject(PERSIB_TABS.weekly_recap),
+    trivia_facts: migrateLegacyTemplateToProject(PERSIB_TABS.trivia_facts),
+    before_match: migrateLegacyTemplateToProject(PERSIB_TABS.before_match),
+    transfer_news: migrateLegacyTemplateToProject(PERSIB_TABS.transfer_news)
+  };
 
   // gsap-lib.js
   var GSAP_INLINE = `/*!
@@ -414,6 +1096,607 @@
 
 `;
 
+  // shared-svg-library.js
+  var SHARED_SVG_COMPONENTS = {
+    svg_persib_shield: {
+      componentId: "svg_persib_shield",
+      name: "Perisai Lambang Persib",
+      category: "Club Logo",
+      defaultProps: {
+        width: 200,
+        height: 240,
+        colors: { primary: "#003da5", accent: "#f0a500", secondary: "#ffffff" }
+      },
+      render: (props = {}) => {
+        const p = props.colors?.primary || "#003da5";
+        const a = props.colors?.accent || "#f0a500";
+        const s = props.colors?.secondary || "#ffffff";
+        const w = props.width || 200;
+        const h = props.height || 240;
+        return `<svg viewBox="0 0 200 240" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="shieldGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="${p}"/>
+            <stop offset="100%" stop-color="#001844"/>
+          </linearGradient>
+        </defs>
+        <polygon points="100,10 190,45 190,165 100,230 10,165 10,45" fill="url(#shieldGrad)" stroke="${s}" stroke-width="6"/>
+        <polygon points="100,28 172,55 172,152 100,208 28,152 28,55" fill="none" stroke="${a}" stroke-width="4"/>
+        <path d="M60,65 L140,65 L120,115 L80,115 Z" fill="${a}" opacity="0.9"/>
+        <text x="100" y="150" font-family="'Bebas Neue', sans-serif" font-size="52" font-weight="900" fill="${s}" text-anchor="middle">PERSIB</text>
+        <text x="100" y="180" font-family="'Inter', sans-serif" font-size="16" font-weight="800" fill="${a}" text-anchor="middle" letter-spacing="3">1933</text>
+      </svg>`;
+      }
+    },
+    svg_trophy_ladder: {
+      componentId: "svg_trophy_ladder",
+      name: "Piala Juara Emas (Trophy)",
+      category: "Trophy",
+      defaultProps: {
+        width: 300,
+        height: 380,
+        colors: { primary: "#003da5", accent: "#f0a500", secondary: "#0a0a0a" }
+      },
+      render: (props = {}) => {
+        const a = props.colors?.accent || "#f0a500";
+        const p = props.colors?.primary || "#003da5";
+        const w = props.width || 300;
+        const h = props.height || 380;
+        return `<svg viewBox="0 0 300 380" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="goldCupGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#ffe066"/>
+            <stop offset="60%" stop-color="${a}"/>
+            <stop offset="100%" stop-color="#b45309"/>
+          </linearGradient>
+        </defs>
+        <!-- Handles -->
+        <path d="M50,80 C20,90 20,160 70,180" fill="none" stroke="${a}" stroke-width="12" stroke-linecap="round"/>
+        <path d="M250,80 C280,90 280,160 230,180" fill="none" stroke="${a}" stroke-width="12" stroke-linecap="round"/>
+        <!-- Main Cup Body -->
+        <path d="M70,50 L230,50 L210,180 C190,230 110,230 90,180 Z" fill="url(#goldCupGrad)" stroke="#ffd700" stroke-width="4"/>
+        <!-- Cup Rim & Crest -->
+        <ellipse cx="150" cy="50" rx="80" ry="16" fill="#ffd700"/>
+        <circle cx="150" cy="120" r="28" fill="${p}" stroke="#ffffff" stroke-width="3"/>
+        <text x="150" y="130" font-family="'Bebas Neue', sans-serif" font-size="28" font-weight="900" fill="#ffffff" text-anchor="middle">\u2605</text>
+        <!-- Stem & Base -->
+        <path d="M135,225 L165,225 L175,290 L125,290 Z" fill="url(#goldCupGrad)"/>
+        <rect x="90" y="290" width="120" height="25" rx="6" fill="#ffd700"/>
+        <rect x="70" y="315" width="160" height="45" rx="8" fill="#1e293b" stroke="${a}" stroke-width="3"/>
+        <text x="150" y="345" font-family="'Bebas Neue', sans-serif" font-size="22" font-weight="900" fill="${a}" text-anchor="middle" letter-spacing="2">CHAMPIONS 2026</text>
+      </svg>`;
+      }
+    },
+    svg_jersey_no10: {
+      componentId: "svg_jersey_no10",
+      name: "Jersey Pangeran Biru No. 10",
+      category: "Jersey",
+      defaultProps: {
+        width: 320,
+        height: 360,
+        colors: { primary: "#003da5", accent: "#f0a500", text: "#ffffff" }
+      },
+      render: (props = {}) => {
+        const p = props.colors?.primary || "#003da5";
+        const a = props.colors?.accent || "#f0a500";
+        const t = props.colors?.text || "#ffffff";
+        const w = props.width || 320;
+        const h = props.height || 360;
+        return `<svg viewBox="0 0 320 360" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="jerseyGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${p}"/>
+            <stop offset="100%" stop-color="#001a4d"/>
+          </linearGradient>
+        </defs>
+        <!-- Jersey Body & Sleeves -->
+        <path d="M90,30 L130,45 C150,48 170,48 190,45 L230,30 L310,95 L270,145 L240,125 L240,340 L80,340 L80,125 L50,145 L10,95 Z" fill="url(#jerseyGrad)" stroke="${a}" stroke-width="4"/>
+        <!-- Collar -->
+        <path d="M125,43 C140,65 180,65 195,43 Z" fill="${a}"/>
+        <!-- Shoulder Stripes -->
+        <line x1="85" y1="35" x2="30" y2="100" stroke="${a}" stroke-width="5"/>
+        <line x1="235" y1="35" x2="290" y2="100" stroke="${a}" stroke-width="5"/>
+        <!-- Club Emblem on Chest -->
+        <polygon points="110,90 125,97 125,115 110,125 95,115 95,97" fill="${a}"/>
+        <!-- Big Number 10 -->
+        <text id="tnJerseyNumber" x="160" y="240" font-family="'Bebas Neue', sans-serif" font-size="120" font-weight="900" fill="${t}" text-anchor="middle" letter-spacing="4">10</text>
+        <text x="160" y="275" font-family="'Inter', sans-serif" font-size="20" font-weight="800" fill="${a}" text-anchor="middle" letter-spacing="5">MAUNG BANDUNG</text>
+      </svg>`;
+      }
+    },
+    svg_scoreboard_stadium: {
+      componentId: "svg_scoreboard_stadium",
+      name: "Papan Skor Stadion (Scoreboard)",
+      category: "Stadium",
+      defaultProps: {
+        width: 740,
+        height: 320,
+        colors: { primary: "#003da5", accent: "#f0a500", text: "#ffffff" }
+      },
+      render: (props = {}) => {
+        const p = props.colors?.primary || "#003da5";
+        const a = props.colors?.accent || "#f0a500";
+        const t = props.colors?.text || "#ffffff";
+        const w = props.width || 740;
+        const h = props.height || 320;
+        return `<svg viewBox="0 0 740 320" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+        <rect x="10" y="10" width="720" height="300" rx="24" fill="#0c121e" stroke="${a}" stroke-width="4"/>
+        <!-- Header Pill -->
+        <rect x="280" y="0" width="180" height="38" rx="19" fill="${a}"/>
+        <text x="370" y="26" font-family="'Bebas Neue', sans-serif" font-size="22" font-weight="900" fill="#0a0a0a" text-anchor="middle">FULL TIME</text>
+        <!-- Home Team -->
+        <g transform="translate(110, 60)">
+          <polygon points="40,0 80,16 80,72 40,104 0,72 0,16" fill="${p}" stroke="${a}" stroke-width="3"/>
+          <text x="40" y="60" font-family="'Bebas Neue', sans-serif" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle">P</text>
+          <text x="40" y="140" font-family="'Bebas Neue', sans-serif" font-size="30" font-weight="900" fill="${t}" text-anchor="middle">PERSIB</text>
+        </g>
+        <!-- Center Scores -->
+        <text x="310" y="170" font-family="'Bebas Neue', sans-serif" font-size="110" font-weight="900" fill="${t}" text-anchor="middle">3</text>
+        <text x="370" y="155" font-family="'Bebas Neue', sans-serif" font-size="60" font-weight="900" fill="${a}" text-anchor="middle">\u2014</text>
+        <text x="430" y="170" font-family="'Bebas Neue', sans-serif" font-size="110" font-weight="900" fill="#9ca3af" text-anchor="middle">1</text>
+        <text x="370" y="215" font-family="'Inter', sans-serif" font-size="15" font-weight="700" fill="${a}" text-anchor="middle" letter-spacing="2">STADION SI JALAK HARUPAT</text>
+        <!-- Away Team -->
+        <g transform="translate(550, 60)">
+          <polygon points="40,0 80,16 80,72 40,104 0,72 0,16" fill="#2d3748" stroke="#ffffff" stroke-width="3"/>
+          <text x="40" y="60" font-family="'Bebas Neue', sans-serif" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle">R</text>
+          <text x="40" y="140" font-family="'Bebas Neue', sans-serif" font-size="30" font-weight="900" fill="#9ca3af" text-anchor="middle">RIVAL</text>
+        </g>
+      </svg>`;
+      }
+    },
+    svg_duel_radar: {
+      componentId: "svg_duel_radar",
+      name: "Radar Taktik & Duel (Radar)",
+      category: "Radar",
+      defaultProps: {
+        width: 400,
+        height: 400,
+        colors: { primary: "#003da5", accent: "#f0a500", secondary: "#0070c0" }
+      },
+      render: (props = {}) => {
+        const a = props.colors?.accent || "#f0a500";
+        const p = props.colors?.primary || "#003da5";
+        const w = props.width || 400;
+        const h = props.height || 400;
+        return `<svg viewBox="0 0 400 400" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="200" cy="200" r="180" fill="#080e1a" stroke="${p}" stroke-width="4"/>
+        <circle cx="200" cy="200" r="135" fill="none" stroke="${p}" stroke-width="2" stroke-dasharray="6,6" opacity="0.6"/>
+        <circle cx="200" cy="200" r="90" fill="none" stroke="${a}" stroke-width="2" opacity="0.7"/>
+        <circle cx="200" cy="200" r="45" fill="none" stroke="${a}" stroke-width="2" stroke-dasharray="4,4"/>
+        <!-- Crosshairs -->
+        <line x1="20" y1="200" x2="380" y2="200" stroke="${p}" stroke-width="2" opacity="0.5"/>
+        <line x1="200" y1="20" x2="200" y2="380" stroke="${p}" stroke-width="2" opacity="0.5"/>
+        <!-- Radar Sweep Indicator -->
+        <polygon id="bmRadarSweep" points="200,200 350,110 380,200" fill="${a}" opacity="0.25"/>
+        <circle cx="200" cy="200" r="8" fill="${a}"/>
+        <text x="200" y="360" font-family="'Inter', sans-serif" font-size="14" font-weight="800" fill="${a}" text-anchor="middle" letter-spacing="3">TACTICAL RADAR</text>
+      </svg>`;
+      }
+    },
+    svg_motm_badge: {
+      componentId: "svg_motm_badge",
+      name: "Lencana Bintang MOTM (Badge)",
+      category: "Badge & Number",
+      defaultProps: {
+        width: 260,
+        height: 260,
+        colors: { accent: "#f0a500", primary: "#003da5", text: "#ffffff" }
+      },
+      render: (props = {}) => {
+        const a = props.colors?.accent || "#f0a500";
+        const p = props.colors?.primary || "#003da5";
+        const t = props.colors?.text || "#ffffff";
+        const w = props.width || 260;
+        const h = props.height || 260;
+        return `<svg viewBox="0 0 260 260" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="130,10 165,85 245,95 185,150 205,230 130,190 55,230 75,150 15,95 95,85" fill="#001844" stroke="${a}" stroke-width="6"/>
+        <circle cx="130" cy="130" r="55" fill="${p}" stroke="#ffd700" stroke-width="3"/>
+        <text x="130" y="125" font-family="'Bebas Neue', sans-serif" font-size="28" font-weight="900" fill="${a}" text-anchor="middle">MAN OF</text>
+        <text x="130" y="152" font-family="'Bebas Neue', sans-serif" font-size="30" font-weight="900" fill="${t}" text-anchor="middle">MATCH</text>
+      </svg>`;
+      }
+    },
+    svg_wilujeng_stamp: {
+      componentId: "svg_wilujeng_stamp",
+      name: "Stempel Wilujeng Sumping",
+      category: "Badge & Number",
+      defaultProps: {
+        width: 440,
+        height: 160,
+        colors: { accent: "#f0a500", text: "#ffffff" }
+      },
+      render: (props = {}) => {
+        const a = props.colors?.accent || "#f0a500";
+        const t = props.colors?.text || "#ffffff";
+        const w = props.width || 440;
+        const h = props.height || 160;
+        return `<svg viewBox="0 0 440 160" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+        <rect x="10" y="10" width="420" height="140" rx="12" fill="none" stroke="${a}" stroke-width="6" stroke-dasharray="16,6"/>
+        <rect x="22" y="22" width="396" height="116" rx="8" fill="rgba(240, 165, 0, 0.12)" stroke="${a}" stroke-width="2"/>
+        <text x="220" y="70" font-family="'Bebas Neue', sans-serif" font-size="52" font-weight="900" fill="${a}" text-anchor="middle" letter-spacing="4">WILUJENG SUMPING</text>
+        <text x="220" y="112" font-family="'Inter', sans-serif" font-size="18" font-weight="800" fill="${t}" text-anchor="middle" letter-spacing="6">OFFICIAL PLAYER SIGNING</text>
+      </svg>`;
+      }
+    },
+    svg_vs_badge: {
+      componentId: "svg_vs_badge",
+      name: "Lencana Duel Panas (VS)",
+      category: "Badge & Number",
+      defaultProps: {
+        width: 220,
+        height: 220,
+        colors: { accent: "#f0a500", primary: "#dc2626" }
+      },
+      render: (props = {}) => {
+        const a = props.colors?.accent || "#f0a500";
+        const p = props.colors?.primary || "#dc2626";
+        const w = props.width || 220;
+        const h = props.height || 220;
+        return `<svg viewBox="0 0 220 220" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="110,10 140,80 215,80 155,125 180,195 110,150 40,195 65,125 5,80 80,80" fill="${p}" stroke="${a}" stroke-width="5"/>
+        <circle cx="110" cy="110" r="48" fill="#0a0a0a" stroke="${a}" stroke-width="3"/>
+        <text x="110" y="128" font-family="'Bebas Neue', sans-serif" font-size="54" font-weight="900" fill="${a}" text-anchor="middle" font-style="italic">VS</text>
+      </svg>`;
+      }
+    },
+    svg_gold_crown: {
+      componentId: "svg_gold_crown",
+      name: "Mahkota Raja Juara (Crown)",
+      category: "Trophy",
+      defaultProps: {
+        width: 280,
+        height: 200,
+        colors: { accent: "#f0a500", primary: "#003da5" }
+      },
+      render: (props = {}) => {
+        const a = props.colors?.accent || "#f0a500";
+        const p = props.colors?.primary || "#003da5";
+        const w = props.width || 280;
+        const h = props.height || 200;
+        return `<svg viewBox="0 0 280 200" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="crownGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#ffe57f"/>
+            <stop offset="100%" stop-color="${a}"/>
+          </linearGradient>
+        </defs>
+        <path d="M20,160 L40,40 L95,110 L140,20 L185,110 L240,40 L260,160 Z" fill="url(#crownGrad)" stroke="#ffd700" stroke-width="4"/>
+        <circle cx="40" cy="35" r="10" fill="#ffffff"/>
+        <circle cx="140" cy="18" r="12" fill="#ffffff"/>
+        <circle cx="240" cy="35" r="10" fill="#ffffff"/>
+        <rect x="20" y="150" width="240" height="25" rx="6" fill="#1e293b" stroke="${a}" stroke-width="3"/>
+        <circle cx="70" cy="162" r="6" fill="${p}"/>
+        <circle cx="140" cy="162" r="6" fill="${a}"/>
+        <circle cx="210" cy="162" r="6" fill="${p}"/>
+      </svg>`;
+      }
+    },
+    svg_decorative_speedlines: {
+      componentId: "svg_decorative_speedlines",
+      name: "Garis Kecepatan Diagonal (Speedlines)",
+      category: "Decorative Graphics",
+      defaultProps: {
+        width: 400,
+        height: 200,
+        colors: { accent: "#f0a500" }
+      },
+      render: (props = {}) => {
+        const a = props.colors?.accent || "#f0a500";
+        const w = props.width || 400;
+        const h = props.height || 200;
+        return `<svg viewBox="0 0 400 200" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+        <line x1="10" y1="190" x2="160" y2="10" stroke="${a}" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+        <line x1="60" y1="190" x2="210" y2="10" stroke="${a}" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+        <line x1="120" y1="190" x2="270" y2="10" stroke="${a}" stroke-width="8" stroke-linecap="round" opacity="0.9"/>
+        <line x1="180" y1="190" x2="330" y2="10" stroke="${a}" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+        <line x1="240" y1="190" x2="390" y2="10" stroke="${a}" stroke-width="5" stroke-linecap="round" opacity="0.7"/>
+      </svg>`;
+      }
+    }
+  };
+  function renderSvgComponent(componentId, props = {}) {
+    const comp = SHARED_SVG_COMPONENTS[componentId];
+    if (!comp) {
+      return `<svg viewBox="0 0 200 200" width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="200" height="200" rx="12" fill="#1e293b" stroke="#f0a500" stroke-width="2"/>
+      <text x="100" y="105" font-family="'Inter', sans-serif" font-size="14" fill="#ffffff" text-anchor="middle">Komponen SVG: ${componentId}</text>
+    </svg>`;
+    }
+    return comp.render({ ...comp.defaultProps, ...props });
+  }
+
+  // asset-library.js
+  var ASSET_CATEGORIES = [
+    "All",
+    "Club Logo",
+    "Opponent Logo",
+    "Player Photo",
+    "Team Photo",
+    "Jersey",
+    "Trophy",
+    "Stadium",
+    "Badge & Number",
+    "Decorative Graphics",
+    "Background",
+    "Custom Upload"
+  ];
+  var BUILTIN_ASSETS = [
+    {
+      id: "ast_persib_logo",
+      name: "Logo Resmi Persib Bandung",
+      category: "Club Logo",
+      fileType: "png",
+      fileUrl: "/public/logos/brand/logo.png",
+      thumbnail: "/public/logos/brand/logo.png",
+      width: 240,
+      height: 240,
+      aspectRatio: "1:1",
+      fileSize: 92646,
+      createdAt: "2026-11-08T00:00:00.000Z",
+      tags: ["persib", "logo", "official", "brand", "crest"]
+    },
+    {
+      id: "ast_persib_shield",
+      name: "Perisai Vektor Persib 1933",
+      category: "Club Logo",
+      fileType: "svg-component",
+      componentId: "svg_persib_shield",
+      fileUrl: "component:svg_persib_shield",
+      thumbnail: "component:svg_persib_shield",
+      width: 200,
+      height: 240,
+      aspectRatio: "1:1.2",
+      fileSize: 1200,
+      createdAt: "2026-11-08T00:00:00.000Z",
+      tags: ["perisai", "shield", "crest", "vector", "persib"]
+    },
+    {
+      id: "ast_trophy_ladder",
+      name: "Piala Juara Emas (Trophy)",
+      category: "Trophy",
+      fileType: "svg-component",
+      componentId: "svg_trophy_ladder",
+      fileUrl: "component:svg_trophy_ladder",
+      thumbnail: "component:svg_trophy_ladder",
+      width: 300,
+      height: 380,
+      aspectRatio: "1:1.26",
+      fileSize: 2400,
+      createdAt: "2026-11-08T00:00:00.000Z",
+      tags: ["trophy", "piala", "juara", "emas", "champions"]
+    },
+    {
+      id: "ast_gold_crown",
+      name: "Mahkota Raja Juara (Crown)",
+      category: "Trophy",
+      fileType: "svg-component",
+      componentId: "svg_gold_crown",
+      fileUrl: "component:svg_gold_crown",
+      thumbnail: "component:svg_gold_crown",
+      width: 280,
+      height: 200,
+      aspectRatio: "1.4:1",
+      fileSize: 1500,
+      createdAt: "2026-11-08T00:00:00.000Z",
+      tags: ["crown", "mahkota", "gold", "king", "juara"]
+    },
+    {
+      id: "ast_jersey_no10",
+      name: "Jersey Pangeran Biru No. 10",
+      category: "Jersey",
+      fileType: "svg-component",
+      componentId: "svg_jersey_no10",
+      fileUrl: "component:svg_jersey_no10",
+      thumbnail: "component:svg_jersey_no10",
+      width: 320,
+      height: 360,
+      aspectRatio: "1:1.12",
+      fileSize: 2800,
+      createdAt: "2026-11-08T00:00:00.000Z",
+      tags: ["jersey", "baju", "nomor10", "playmaker", "seragam"]
+    },
+    {
+      id: "ast_scoreboard_stadium",
+      name: "Papan Skor Stadion Si Jalak Harupat",
+      category: "Stadium",
+      fileType: "svg-component",
+      componentId: "svg_scoreboard_stadium",
+      fileUrl: "component:svg_scoreboard_stadium",
+      thumbnail: "component:svg_scoreboard_stadium",
+      width: 740,
+      height: 320,
+      aspectRatio: "2.3:1",
+      fileSize: 3200,
+      createdAt: "2026-11-08T00:00:00.000Z",
+      tags: ["scoreboard", "skor", "papan", "stadion", "fulltime"]
+    },
+    {
+      id: "ast_duel_radar",
+      name: "Radar Taktik & Duel Antar Lini",
+      category: "Radar",
+      fileType: "svg-component",
+      componentId: "svg_duel_radar",
+      fileUrl: "component:svg_duel_radar",
+      thumbnail: "component:svg_duel_radar",
+      width: 400,
+      height: 400,
+      aspectRatio: "1:1",
+      fileSize: 2100,
+      createdAt: "2026-11-08T00:00:00.000Z",
+      tags: ["radar", "taktik", "headtohead", "duel", "analisis"]
+    },
+    {
+      id: "ast_motm_badge",
+      name: "Lencana Bintang MOTM",
+      category: "Badge & Number",
+      fileType: "svg-component",
+      componentId: "svg_motm_badge",
+      fileUrl: "component:svg_motm_badge",
+      thumbnail: "component:svg_motm_badge",
+      width: 260,
+      height: 260,
+      aspectRatio: "1:1",
+      fileSize: 1800,
+      createdAt: "2026-11-08T00:00:00.000Z",
+      tags: ["motm", "badge", "lencana", "star", "penghargaan"]
+    },
+    {
+      id: "ast_wilujeng_stamp",
+      name: "Stempel Wilujeng Sumping",
+      category: "Badge & Number",
+      fileType: "svg-component",
+      componentId: "svg_wilujeng_stamp",
+      fileUrl: "component:svg_wilujeng_stamp",
+      thumbnail: "component:svg_wilujeng_stamp",
+      width: 440,
+      height: 160,
+      aspectRatio: "2.75:1",
+      fileSize: 1600,
+      createdAt: "2026-11-08T00:00:00.000Z",
+      tags: ["wilujeng", "sumping", "transfer", "stempel", "resmi"]
+    },
+    {
+      id: "ast_vs_badge",
+      name: "Lencana Duel Panas (VS)",
+      category: "Badge & Number",
+      fileType: "svg-component",
+      componentId: "svg_vs_badge",
+      fileUrl: "component:svg_vs_badge",
+      thumbnail: "component:svg_vs_badge",
+      width: 220,
+      height: 220,
+      aspectRatio: "1:1",
+      fileSize: 1400,
+      createdAt: "2026-11-08T00:00:00.000Z",
+      tags: ["vs", "versus", "duel", "bigmatch", "api"]
+    },
+    {
+      id: "ast_speedlines",
+      name: "Garis Kecepatan Diagonal",
+      category: "Decorative Graphics",
+      fileType: "svg-component",
+      componentId: "svg_decorative_speedlines",
+      fileUrl: "component:svg_decorative_speedlines",
+      thumbnail: "component:svg_decorative_speedlines",
+      width: 400,
+      height: 200,
+      aspectRatio: "2:1",
+      fileSize: 900,
+      createdAt: "2026-11-08T00:00:00.000Z",
+      tags: ["speedlines", "motion", "garis", "kecepatan", "overlay"]
+    }
+  ];
+  var customAssetsRegistry = /* @__PURE__ */ new Map();
+  function getAllAssets() {
+    const customList = Array.from(customAssetsRegistry.values());
+    return [...BUILTIN_ASSETS, ...customList];
+  }
+  function getAssetById(assetId) {
+    if (!assetId) return null;
+    return getAllAssets().find((a) => a.id === assetId) || null;
+  }
+  function filterAssets(category = "All", searchQuery = "") {
+    let assets = getAllAssets();
+    if (category && category !== "All") {
+      assets = assets.filter((a) => a.category.toLowerCase() === category.toLowerCase());
+    }
+    if (searchQuery && searchQuery.trim() !== "") {
+      const q = searchQuery.toLowerCase().trim();
+      assets = assets.filter(
+        (a) => a.name.toLowerCase().includes(q) || a.tags && a.tags.some((t) => t.toLowerCase().includes(q))
+      );
+    }
+    return assets;
+  }
+  function addUploadedAsset(assetData) {
+    if (!assetData || !assetData.fileUrl) {
+      throw new Error("Data asset tidak lengkap.");
+    }
+    const assetId = assetData.id || `ast_up_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const asset = {
+      id: assetId,
+      name: assetData.name || "Aset Kustom",
+      category: assetData.category || "Custom Upload",
+      fileType: assetData.fileType || "png",
+      fileUrl: assetData.fileUrl,
+      thumbnail: assetData.thumbnail || assetData.fileUrl,
+      width: Number(assetData.width) || 300,
+      height: Number(assetData.height) || 300,
+      aspectRatio: assetData.aspectRatio || "1:1",
+      fileSize: Number(assetData.fileSize) || 0,
+      createdAt: assetData.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+      tags: Array.isArray(assetData.tags) ? assetData.tags : ["upload", "custom"]
+    };
+    customAssetsRegistry.set(assetId, asset);
+    return asset;
+  }
+  function checkAssetUsage(project, assetId) {
+    if (!project || !project.scenes || !assetId) {
+      return { inUse: false, count: 0, scenes: [] };
+    }
+    const matchingScenes = [];
+    let usageCount = 0;
+    project.scenes.forEach((scene) => {
+      let usedInScene = false;
+      (scene.elements || []).forEach((el) => {
+        if (el.assetId === assetId || el.assetUrl === assetId || el.props?.componentId === assetId) {
+          usageCount++;
+          usedInScene = true;
+        }
+      });
+      if (usedInScene) {
+        matchingScenes.push(scene.title || scene.name || `Adegan ${scene.order}`);
+      }
+    });
+    return {
+      inUse: usageCount > 0,
+      count: usageCount,
+      scenes: matchingScenes
+    };
+  }
+  function deleteAsset(project, assetId, force = false) {
+    if (!customAssetsRegistry.has(assetId)) {
+      if (BUILTIN_ASSETS.some((a) => a.id === assetId)) {
+        return { success: false, reason: "Aset bawaan sistem tidak dapat dihapus." };
+      }
+      return { success: false, reason: "Aset tidak ditemukan." };
+    }
+    const usage = checkAssetUsage(project, assetId);
+    if (usage.inUse && !force) {
+      return {
+        success: false,
+        reason: `Aset masih digunakan pada ${usage.count} elemen di adegan: ${usage.scenes.join(", ")}`,
+        usage
+      };
+    }
+    customAssetsRegistry.delete(assetId);
+    return { success: true };
+  }
+  function validateProjectAssets(project) {
+    if (!project || !Array.isArray(project.scenes)) {
+      return { valid: true, missing: [], warnings: [] };
+    }
+    const missing = [];
+    const warnings = [];
+    const checked = /* @__PURE__ */ new Set();
+    project.scenes.forEach((scene) => {
+      (scene.elements || []).forEach((el) => {
+        if (el.assetId && !checked.has(el.assetId)) {
+          checked.add(el.assetId);
+          const asset = getAssetById(el.assetId);
+          if (!asset) {
+            missing.push(`Asset ID "${el.assetId}" (Elemen: "${el.name || el.type}", Adegan: "${scene.name || scene.title}")`);
+          }
+        }
+      });
+    });
+    return {
+      valid: missing.length === 0,
+      missing,
+      warnings
+    };
+  }
+
   // motion-engine.js
   function escapeHTML(str) {
     if (!str) return "";
@@ -427,26 +1710,23 @@
     const rem = s % 60;
     return String(m).padStart(2, "0") + ":" + String(rem).padStart(2, "0");
   }
-  function generateMotionGraphicHTML(config) {
-    const {
-      id: tabId = "post_match",
-      topic = "Persib Bandung",
-      category = "Hasil Pertandingan",
-      angle = "",
-      audience = "Bobotoh",
-      goal = "Rayakan Kemenangan",
-      tone = "Bangga & Bersemangat",
-      preset = "preset_b",
-      colors = {
-        primary: "#003da5",
-        secondary: "#0a0a0a",
-        text: "#ffffff",
-        accent: "#f0a500"
-      },
-      duration = 30,
-      metaphor = "card",
-      scenes = []
-    } = config;
+  function generateMotionGraphicHTML(input) {
+    const project = input && input.version && input.canvas ? validateProject(input).project : migrateLegacyTemplateToProject(input);
+    const canvasWidth = project.canvas?.width || 1080;
+    const canvasHeight = project.canvas?.height || 1920;
+    const fps = project.fps || 30;
+    const tabId = project.metadata?.tabId || project.id || "post_match";
+    const topic = project.videoTitle || project.name || "Persib Motion";
+    const category = project.metadata?.category || "Hasil Pertandingan";
+    const preset = project.metadata?.preset || "preset_b";
+    const colors = project.theme?.colors || {
+      primary: "#003da5",
+      secondary: "#0a0a0a",
+      text: "#ffffff",
+      accent: "#f0a500"
+    };
+    const duration = project.totalDuration || 30;
+    const scenes = project.scenes || [];
     let totalCalculatedDuration = 0;
     const computedScenes = scenes.map((s, idx) => {
       const sDuration = Number(s.duration) || Math.max(3, Math.round(duration / (scenes.length || 1)));
@@ -522,13 +1802,13 @@
       overflow: hidden;
     }
 
-    /* 1080x1920 Virtual Stage */
+    /* ${canvasWidth}x${canvasHeight} Virtual Stage */
     #stage-wrapper {
       position: absolute;
       top: 50%;
       left: 50%;
-      width: 1080px;
-      height: 1920px;
+      width: ${canvasWidth}px;
+      height: ${canvasHeight}px;
       transform-origin: center center;
       transform: translate(-50%, -50%) scale(0.2);
       box-shadow: 0 30px 80px -15px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(240, 165, 0, 0.25);
@@ -541,8 +1821,8 @@
       position: absolute;
       top: 0;
       left: 0;
-      width: 1080px;
-      height: 1920px;
+      width: ${canvasWidth}px;
+      height: ${canvasHeight}px;
       overflow: hidden;
       background: ${getBackgroundCSS(activeTabId2, colors)};
     }
@@ -751,6 +2031,23 @@
       position: relative;
     }
 
+    .custom-scene-elements-stage {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 25;
+    }
+
+    .scene-custom-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .custom-scene-elem {
+      pointer-events: auto;
+    }
+
     /* Milestone Data Pill Card */
     .data-pill-card {
       position: absolute;
@@ -814,6 +2111,7 @@
       font-weight: 600;
       line-height: 1.35;
       color: #f1f5f9;
+      width: 100%;
     }
 
     .subtitle-text .kw-highlight {
@@ -821,6 +2119,25 @@
       font-weight: 800;
       text-decoration: underline;
       text-underline-offset: 6px;
+    }
+
+    /* Word-Level Karaoke Caption Styles (Phase 4B) */
+    .caption-word {
+      display: inline-block;
+      transition: color 0.08s ease, transform 0.08s ease, text-shadow 0.08s ease;
+      margin: 0 4px;
+      color: var(--caption-normal-color, #f1f5f9);
+    }
+
+    .caption-word.caption-word-active {
+      color: var(--caption-active-color, #f0a500) !important;
+      font-weight: 800 !important;
+      transform: scale(1.08);
+      text-shadow: var(--caption-active-glow, 0 0 16px rgba(240, 165, 0, 0.75)) !important;
+    }
+
+    .caption-word.caption-word-spoken {
+      color: var(--caption-spoken-color, rgba(241, 245, 249, 0.7));
     }
 
     /* Footer Safe Zone */
@@ -974,6 +2291,10 @@
           <div class="theme-stage-container">
             ${renderThemeVisualStage(activeTabId2, colors, preset)}
           </div>
+          <!-- Dynamic Scene Custom Elements Layer -->
+          <div class="custom-scene-elements-stage" id="customSceneElementsStage">
+            ${renderProjectCustomElementsHTML(computedScenes, colors)}
+          </div>
         </main>
 
         <!-- Data Value Milestone Card -->
@@ -1020,17 +2341,28 @@
     <!-- Record Mode Countdown Overlay -->
     <div id="record-overlay">
       <div id="record-count">3</div>
-      <div style="font-size: 26px; margin-top: 16px; color: #d1d5db;">Mempersiapkan Rekaman Layar 1080x1920...</div>
+      <div style="font-size: 26px; margin-top: 16px; color: #d1d5db;">Mempersiapkan Rekaman Layar ${canvasWidth}x${canvasHeight}...</div>
     </div>
+    ${project.audio?.enabled && project.audio?.bgmUrl ? `<audio id="bgmAudio" src="${escapeHTML(project.audio.bgmUrl)}" preload="auto" style="display:none;"></audio>` : ""}
+    ${(project.scenes || []).map((s, sIdx) => {
+      if (s.voiceover?.enabled && s.voiceover?.audioUrl) {
+        return `<audio id="vo_audio_${sIdx}" class="vo-audio-elem" data-scene-idx="${sIdx}" data-start-time="${s.startTime || 0}" data-duration="${s.duration || 0}" src="${escapeHTML(s.voiceover.audioUrl)}" preload="auto" style="display:none;"></audio>`;
+      }
+      return "";
+    }).filter(Boolean).join("\n    ")}
   </div>
 
   <script>
+    // Unified Project JSON (Single source of truth)
+    window.PROJECT = ${JSON.stringify(project)};
+
     // Master Config & Timing CUES
     const CUES = {
       tabId: "${activeTabId2}",
       duration: ${finalDuration},
       scenes: ${serializedScenes},
-      colors: ${serializedColors}
+      colors: ${serializedColors},
+      audio: ${JSON.stringify(project.audio || { enabled: false, bgmUrl: "", volume: 0.8, muted: false, startPosition: 0 })}
     };
 
     window.DURATION = CUES.duration;
@@ -1064,8 +2396,8 @@
     function resizeStage() {
       const containerWidth = window.innerWidth;
       const containerHeight = window.innerHeight;
-      const stageW = 1080;
-      const stageH = 1920;
+      const stageW = ${canvasWidth};
+      const stageH = ${canvasHeight};
 
       const isStandalone = (window.self === window.top);
       const paddingBottom = isStandalone ? 75 : 0;
@@ -1123,6 +2455,14 @@
           timeDisplay.textContent = formatTime(t) + " / " + formatTime(CUES.duration);
           progressFill.style.width = (t / CUES.duration * 100) + "%";
 
+          if (typeof syncVoiceovers === "function") {
+            syncVoiceovers(t, isPlaying);
+          }
+
+          if (typeof syncCaptions === "function") {
+            syncCaptions(t);
+          }
+
           if (window.parent && window.parent !== window) {
             try {
               window.parent.postMessage({
@@ -1136,6 +2476,10 @@
         },
         onComplete: function() {
           isPlaying = false;
+          if (bgmAudio) bgmAudio.pause();
+          if (typeof syncVoiceovers === "function") {
+            syncVoiceovers(CUES.duration, false);
+          }
           iconPlay.textContent = "\u25B6 Putar";
           if (window.parent && window.parent !== window) {
             try {
@@ -1170,7 +2514,7 @@
           sceneBadgeNum.textContent = String(sc.idx).padStart(2, "0");
           sceneBadgeTitle.textContent = sc.title || ("ADEGAN " + sc.idx);
           setHeadlineText(sc.screenText, sc.highlightWord);
-          subtitleText.innerHTML = highlightSubtitle(sc.narration, sc.highlightWord);
+          renderSceneCaptions(sc);
 
           if (sc.dataValue && sc.dataValue.trim() !== "") {
             dataValText.textContent = sc.dataValue;
@@ -1191,6 +2535,32 @@
 
         // Choreograph theme-specific graphics per scene
         choreographThemeScene(CUES.tabId, sceneTL, sc.idx, sc.duration);
+
+        // Choreograph custom elements for this scene
+        const customLayer = document.getElementById("scene_custom_" + sc.id);
+        sceneTL.add(function() {
+          document.querySelectorAll(".scene-custom-layer").forEach(function(l) {
+            l.style.display = "none";
+          });
+          if (customLayer) customLayer.style.display = "block";
+        }, 0);
+
+        (sc.elements || []).forEach(function(el) {
+          const elDom = document.getElementById("el_" + el.id);
+          if (!elDom) return;
+          const anim = el.animation || { type: "none" };
+          const animDur = anim.duration || 0.5;
+          const animDelay = anim.delay || 0;
+          if (anim.type === "fade") {
+            sceneTL.fromTo(elDom, { opacity: 0 }, { opacity: el.opacity !== undefined ? el.opacity : 1, duration: animDur, ease: anim.easing || "power2.out" }, animDelay);
+          } else if (anim.type === "slide") {
+            sceneTL.fromTo(elDom, { y: 60, opacity: 0 }, { y: 0, opacity: el.opacity !== undefined ? el.opacity : 1, duration: animDur, ease: anim.easing || "power2.out" }, animDelay);
+          } else if (anim.type === "scale") {
+            sceneTL.fromTo(elDom, { scale: 0.5, opacity: 0 }, { scale: el.scale || 1, opacity: el.opacity !== undefined ? el.opacity : 1, duration: animDur, ease: anim.easing || "back.out(1.5)" }, animDelay);
+          } else if (anim.type === "rotate") {
+            sceneTL.fromTo(elDom, { rotation: -30, opacity: 0 }, { rotation: el.rotation || 0, opacity: el.opacity !== undefined ? el.opacity : 1, duration: animDur, ease: anim.easing || "power2.out" }, animDelay);
+          }
+        });
 
         masterTimeline.add(sceneTL, sc.start);
       });
@@ -1323,6 +2693,96 @@
       return safe;
     }
 
+    const subtitleBox = document.getElementById("subtitleBox");
+
+    function renderSceneCaptions(sc) {
+      if (!subtitleText) return;
+      const captions = sc.captions;
+
+      if (captions && captions.enabled && Array.isArray(captions.segments) && captions.segments.length > 0) {
+        if (subtitleBox) {
+          subtitleBox.style.display = "flex";
+          if (captions.style?.backgroundColor) subtitleBox.style.backgroundColor = captions.style.backgroundColor;
+        }
+
+        subtitleText.innerHTML = "";
+        subtitleText.style.fontSize = (captions.style?.fontSize || 34) + "px";
+        subtitleText.style.textAlign = captions.style?.textAlign || "center";
+        subtitleText.style.color = captions.style?.textColor || "#ffffff";
+
+        subtitleText.dataset.hasCaptions = "true";
+        subtitleText.dataset.sceneStart = String(sc.start || 0);
+
+        captions.segments.forEach(function(seg, segIdx) {
+          const segSpan = document.createElement("span");
+          segSpan.className = "caption-segment";
+          segSpan.id = "caption_seg_" + sc.idx + "_" + segIdx;
+          segSpan.dataset.start = String(seg.start);
+          segSpan.dataset.end = String(seg.end);
+          segSpan.style.display = segIdx === 0 ? "inline" : "none";
+
+          (seg.words || []).forEach(function(w) {
+            const wordSpan = document.createElement("span");
+            wordSpan.className = "caption-word";
+            wordSpan.dataset.start = String(w.start);
+            wordSpan.dataset.end = String(w.end);
+            wordSpan.dataset.word = w.word;
+            wordSpan.textContent = w.word + " ";
+            segSpan.appendChild(wordSpan);
+          });
+
+          subtitleText.appendChild(segSpan);
+        });
+      } else if (sc.narration && sc.narration.trim()) {
+        if (subtitleBox) {
+          subtitleBox.style.display = "flex";
+          subtitleBox.style.backgroundColor = "rgba(10, 14, 24, 0.88)";
+        }
+        subtitleText.dataset.hasCaptions = "false";
+        subtitleText.innerHTML = highlightSubtitle(sc.narration, sc.highlightWord);
+      } else {
+        if (subtitleBox) subtitleBox.style.display = "none";
+        subtitleText.dataset.hasCaptions = "false";
+        subtitleText.innerHTML = "";
+      }
+    }
+
+    function syncCaptions(currentTime) {
+      if (!subtitleText || subtitleText.dataset.hasCaptions !== "true") return;
+
+      const scStart = parseFloat(subtitleText.dataset.sceneStart || 0);
+      const relTime = Math.max(0, currentTime - scStart);
+
+      const segments = subtitleText.querySelectorAll(".caption-segment");
+      segments.forEach(function(seg) {
+        const segStart = parseFloat(seg.dataset.start || 0);
+        const segEnd = parseFloat(seg.dataset.end || 0);
+
+        if (relTime >= segStart - 0.25 && relTime <= segEnd + 0.35) {
+          seg.style.display = "inline";
+        } else if (segments.length > 1) {
+          seg.style.display = "none";
+        }
+
+        const words = seg.querySelectorAll(".caption-word");
+        words.forEach(function(w) {
+          const wStart = parseFloat(w.dataset.start || 0);
+          const wEnd = parseFloat(w.dataset.end || 0);
+
+          if (relTime >= wStart && relTime <= wEnd) {
+            w.classList.add("caption-word-active");
+            w.classList.remove("caption-word-spoken");
+          } else if (relTime > wEnd) {
+            w.classList.remove("caption-word-active");
+            w.classList.add("caption-word-spoken");
+          } else {
+            w.classList.remove("caption-word-active");
+            w.classList.remove("caption-word-spoken");
+          }
+        });
+      });
+    }
+
     function escapeHTML(str) {
       if (!str) return "";
       return String(str).replace(/[&<>'"]/g, function(tag) {
@@ -1342,30 +2802,77 @@
     }
 
     // Playback APIs
+    const bgmAudio = document.getElementById("bgmAudio");
+    const voElements = Array.from(document.querySelectorAll(".vo-audio-elem"));
+
+    if (bgmAudio) {
+      bgmAudio.volume = CUES.audio.muted ? 0 : (CUES.audio.volume !== undefined ? CUES.audio.volume : 0.8);
+      bgmAudio.muted = Boolean(CUES.audio.muted);
+    }
+
+    function syncVoiceovers(currentTime, shouldPlay) {
+      voElements.forEach(function(vo) {
+        const start = parseFloat(vo.getAttribute("data-start-time") || 0);
+        const dur = parseFloat(vo.getAttribute("data-duration") || 0);
+        const end = start + dur;
+
+        if (currentTime >= start && currentTime < end) {
+          const offset = Math.max(0, currentTime - start);
+          if (Math.abs(vo.currentTime - offset) > 0.3) {
+            try { vo.currentTime = offset; } catch (err) {}
+          }
+          vo.playbackRate = currentSpeed;
+          if (shouldPlay) {
+            vo.play().catch(function() {});
+          } else {
+            vo.pause();
+          }
+        } else {
+          vo.pause();
+          try { vo.currentTime = 0; } catch (err) {}
+        }
+      });
+    }
+
     window.play = function() {
       if (!masterTimeline) return;
       masterTimeline.play();
+      if (bgmAudio) bgmAudio.play().catch(function() {});
       isPlaying = true;
+      syncVoiceovers(masterTimeline.time(), true);
       iconPlay.textContent = "\u275A\u275A Jeda";
     };
 
     window.pause = function() {
       if (!masterTimeline) return;
       masterTimeline.pause();
+      if (bgmAudio) bgmAudio.pause();
       isPlaying = false;
+      syncVoiceovers(masterTimeline.time(), false);
       iconPlay.textContent = "\u25B6 Putar";
     };
 
     window.restart = function() {
       if (!masterTimeline) return;
       masterTimeline.restart();
+      if (bgmAudio) {
+        bgmAudio.currentTime = CUES.audio.startPosition || 0;
+        bgmAudio.play().catch(function() {});
+      }
       isPlaying = true;
+      syncVoiceovers(0, true);
+      syncCaptions(0);
       iconPlay.textContent = "\u275A\u275A Jeda";
     };
 
     window.seek = function(seconds) {
       if (!masterTimeline) return;
       masterTimeline.seek(seconds);
+      if (bgmAudio) {
+        bgmAudio.currentTime = (CUES.audio.startPosition || 0) + seconds;
+      }
+      syncVoiceovers(seconds, isPlaying);
+      syncCaptions(seconds);
     };
 
     // Cross-window postMessage listener from parent studio
@@ -1382,8 +2889,15 @@
       } else if (e.data.type === "MG_SET_SPEED") {
         currentSpeed = e.data.speed;
         if (masterTimeline) masterTimeline.timeScale(currentSpeed);
+        if (bgmAudio) bgmAudio.playbackRate = currentSpeed;
+        voElements.forEach(function(vo) { vo.playbackRate = currentSpeed; });
       } else if (e.data.type === "MG_START_RECORD") {
         btnRecordMode.click();
+      } else if (e.data.type === "MG_SET_AUDIO_VOLUME" && bgmAudio) {
+        bgmAudio.volume = Math.max(0, Math.min(1, Number(e.data.volume) || 0));
+      } else if (e.data.type === "MG_SET_AUDIO_MUTED") {
+        if (bgmAudio) bgmAudio.muted = Boolean(e.data.muted);
+        voElements.forEach(function(vo) { vo.muted = Boolean(e.data.muted); });
       }
     });
 
@@ -1466,6 +2980,49 @@
       default:
         return `linear-gradient(145deg, ${blue} 0%, ${dark} 100%)`;
     }
+  }
+  function renderProjectCustomElementsHTML(scenes, colors) {
+    if (!Array.isArray(scenes)) return "";
+    return scenes.map((sc, scIdx) => {
+      const elements = sc.elements || [];
+      if (elements.length === 0) return "";
+      const items = elements.map((el) => {
+        if (el.visible === false) return "";
+        const x = el.position?.x || 0;
+        const y = el.position?.y || 0;
+        const w = typeof el.size?.width === "number" ? `${el.size.width}px` : el.size?.width || "auto";
+        const h = typeof el.size?.height === "number" ? `${el.size.height}px` : el.size?.height || "auto";
+        const z = el.zIndex || 1;
+        const op = el.opacity !== void 0 ? el.opacity : 1;
+        const rot = el.rotation || 0;
+        const scale = el.scale || 1;
+        let inner = "";
+        if (el.type === "image") {
+          if (!el.assetUrl) {
+            inner = `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed #ef4444;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;padding:8px;text-align:center;">
+            <span style="font-size:24px;">\u26A0\uFE0F</span>
+            <span style="font-size:12px;font-weight:700;">Aset Hilang</span>
+            <span style="font-size:10px;opacity:0.8;word-break:break-all;">${escapeHTML(el.name || el.assetId || "Image")}</span>
+          </div>`;
+          } else {
+            inner = `<img src="${escapeHTML(el.assetUrl)}" alt="${escapeHTML(el.name || "")}" style="width:100%;height:100%;object-fit:${el.fitMode || "contain"};border-radius:${el.styling?.borderRadius || 8}px;display:block;" />`;
+          }
+        } else if (el.type === "svg" || el.type === "component" && (el.props?.componentId || el.assetId)) {
+          const compId = el.props?.componentId || el.assetId;
+          if (compId) {
+            inner = renderSvgComponent(compId, { ...el.styling, width: el.size?.width, height: el.size?.height });
+          } else if (el.content && el.content.includes("<svg")) {
+            inner = el.content;
+          }
+        } else if (el.type === "text" && el.content) {
+          inner = `<div style="font-family:${el.styling?.fontFamily || "'Inter', sans-serif"};font-size:${el.styling?.fontSize || 24}px;font-weight:${el.styling?.fontWeight || 400};color:${el.styling?.color || "#ffffff"};line-height:1.3;">${escapeHTML(el.content)}</div>`;
+        } else if (el.type === "logo") {
+          inner = `<img src="/public/logos/brand/logo.png" alt="Persib" style="width:100%;height:100%;object-fit:contain;" />`;
+        }
+        return `<div id="el_${el.id}" class="custom-scene-elem" style="position:absolute;left:${x}px;top:${y}px;width:${w};height:${h};z-index:${z};opacity:${op};transform:rotate(${rot}deg) scale(${scale});transform-origin:center center;">${inner}</div>`;
+      }).join("");
+      return `<div id="scene_custom_${sc.id}" class="scene-custom-layer" style="position:absolute;inset:0;pointer-events:none;${scIdx === 0 ? "" : "display:none;"}">${items}</div>`;
+    }).join("");
   }
   function renderThemeVisualStage(tabId, colors, preset) {
     const gold = colors.accent || "#f0a500";
@@ -1840,39 +3397,71 @@
 
   // export-helper.js
   function downloadHTMLFile(config) {
-    const htmlContent = generateMotionGraphicHTML(config);
-    const safeFilename = (config.topic || "motion-graphic").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const project = config && config.version && config.canvas ? validateProject(config).project : migrateLegacyTemplateToProject(config);
+    const assetCheck = validateProjectAssets(project);
+    if (!assetCheck.valid && typeof window !== "undefined") {
+      const proceed = window.confirm(
+        `Peringatan: Terdapat ${assetCheck.missing.length} aset yang hilang:
+- ` + assetCheck.missing.join("\n- ") + "\n\nTetap lanjutkan ekspor HTML?"
+      );
+      if (!proceed) return { success: false, missing: assetCheck.missing };
+    }
+    const htmlContent = generateMotionGraphicHTML(project);
+    const safeFilename = (project.videoTitle || project.name || "motion-graphic").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
+    const w = project.canvas?.width || 1080;
+    const h = project.canvas?.height || 1920;
     a.href = url;
-    a.download = `${safeFilename || "motion-graphic"}-1080x1920.html`;
+    a.download = `${safeFilename || "motion-graphic"}-${w}x${h}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  function downloadProjectJSON(config) {
+    const project = config && config.version && config.canvas ? validateProject(config).project : migrateLegacyTemplateToProject(config);
+    const assetCheck = validateProjectAssets(project);
+    if (!assetCheck.valid && typeof window !== "undefined") {
+      const proceed = window.confirm(
+        `Peringatan: Terdapat ${assetCheck.missing.length} aset yang hilang:
+- ` + assetCheck.missing.join("\n- ") + "\n\nTetap simpan file JSON proyek?"
+      );
+      if (!proceed) return { success: false, missing: assetCheck.missing };
+    }
+    const jsonContent = JSON.stringify(project, null, 2);
+    const safeFilename = (project.videoTitle || project.name || "project").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const blob = new Blob([jsonContent], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeFilename || "project"}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
   function generateStructuredPrompt(config) {
-    const {
-      topic = "Topik Video",
-      category = "Edukasi",
-      angle = "Sudut pandang cerita utama",
-      audience = "Masyarakat Umum",
-      goal = "Edukasi",
-      tone = "Informatif",
-      preset = "preset_b",
-      colors = { primary: "#1e3a8a", secondary: "#f8fafc", text: "#0f172a", accent: "#2563eb" },
-      duration = 30,
-      metaphor = "card",
-      scenes = []
-    } = config;
+    const project = config && config.version && config.canvas ? validateProject(config).project : migrateLegacyTemplateToProject(config);
+    const topic = project.videoTitle || project.name || "Topik Video";
+    const category = project.metadata?.category || "Edukasi";
+    const angle = project.metadata?.angle || "Sudut pandang cerita utama";
+    const audience = project.metadata?.audience || "Masyarakat Umum";
+    const goal = project.metadata?.goal || "Edukasi";
+    const tone = project.metadata?.tone || "Informatif";
+    const preset = project.metadata?.preset || "preset_b";
+    const colors = project.theme?.colors || { primary: "#1e3a8a", secondary: "#f8fafc", text: "#0f172a", accent: "#2563eb" };
+    const duration = project.totalDuration || 30;
+    const metaphor = project.metadata?.metaphor || "card";
+    const scenes = project.scenes || [];
     const presetNames = {
       preset_a: "A (Editorial Hangat: Kertas krem, Playfair Display Italic, aksen terracotta)",
       preset_b: "B (Bold Flat: Latar solid motif geometris, Poppins 800, kartu rounded-24px)",
       preset_c: "C (Playful Edukasi: Latar gradasi gelap partikel, Nunito 800, aksen cerah, karaoke subtitle)"
     };
     const sceneRows = scenes.map((s, idx) => {
-      return `| Adegan ${idx + 1}: ${s.title || ""} | ${s.duration}s | Narasi: "${s.narration}" | Teks Layar: "${s.screenText}" | Visual: ${s.visualAction} |`;
+      return `| Adegan ${idx + 1}: ${s.name || s.title || ""} | ${s.duration}s | Narasi: "${s.narration || ""}" | Teks Layar: "${s.screenText || ""}" | Visual: ${s.visualAction || ""} |`;
     }).join("\n");
     return `### BRIEF MOTION GRAPHIC VERTIKAL (9:16)
 Topik: ${topic}
@@ -1880,7 +3469,7 @@ Kategori: ${category}
 Sudut Cerita: ${angle}
 Target Penonton: ${audience}
 Tujuan: ${goal}
-Durasi: ${duration} Detik (30 FPS, Resolusi 1080x1920)
+Durasi: ${duration} Detik (30 FPS, Resolusi ${project.canvas?.width || 1080}x${project.canvas?.height || 1920})
 Preset Gaya: ${presetNames[preset] || preset}
 Palet Warna: Utama 1 (${colors.primary}), Utama 2 (${colors.secondary}), Teks (${colors.text}), Aksen (${colors.accent})
 Objek Utama (Persistent Metaphor): ${metaphor}
@@ -1890,70 +3479,120 @@ Gaya Bicara: ${tone}
 ${sceneRows}
 
 ### INSTRUKSI OUTPUT:
-1. Buat file HTML mandiri dengan panggung 1080x1920 terskala otomatis.
+1. Buat file HTML mandiri dengan panggung ${project.canvas?.width || 1080}x${project.canvas?.height || 1920} terskala otomatis.
 2. Gunakan GSAP 3 timeline deterministik dengan kendali global window.seek(detik) dan window.DURATION = ${duration}.
 3. Terapkan kinetic typography per kata dan kontinuitas objek utama (${metaphor}) di setiap adegan.
 4. Jaga batas aman teks (250px atas, 420px bawah) dan kontras minimal 4.5:1.`;
   }
   function downloadRenderPackage(config) {
-    const safeFilename = (config.topic || "motion-graphic").toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const renderScript = `// render.js: Ekspor otomatis Frame-by-Frame ke MP4 1080x1920 (30fps)
-// Prasyarat: npm i playwright && npx playwright install chromium
-// Pastikan ffmpeg terpasang di sistem PATH
+    const project = config && config.version && config.canvas ? validateProject(config).project : migrateLegacyTemplateToProject(config);
+    const assetCheck = validateProjectAssets(project);
+    if (!assetCheck.valid && typeof window !== "undefined") {
+      const proceed = window.confirm(
+        `Peringatan: Terdapat ${assetCheck.missing.length} aset yang hilang:
+- ` + assetCheck.missing.join("\n- ") + "\n\nTetap unduh skrip render MP4?"
+      );
+      if (!proceed) return { success: false, missing: assetCheck.missing };
+    }
+    const safeFilename = (project.videoTitle || project.name || "motion-graphic").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const canvasWidth = project.canvas?.width || 1080;
+    const canvasHeight = project.canvas?.height || 1920;
+    const fps = project.fps || 30;
+    const renderScript = `// render.js: Ekspor otomatis Frame-by-Frame ke MP4 ${canvasWidth}x${canvasHeight} (${fps}fps)
+// Prasyarat:
+// 1. npm i playwright
+// 2. npx playwright install chromium
+// 3. Pastikan ffmpeg terpasang di sistem PATH
 
-const { chromium } = require("playwright");
-const fs = require("fs");
-const path = require("path");
-const { execSync } = require("child_process");
+import { chromium } from "playwright";
+import fs from "fs";
+import path from "path";
+import { execSync } from "child_process";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function renderVideo() {
-  const htmlFile = path.resolve(__dirname, "${safeFilename || "video"}-1080x1920.html");
+  const htmlFile = path.resolve(__dirname, "${safeFilename || "video"}-${canvasWidth}x${canvasHeight}.html");
   const framesDir = path.resolve(__dirname, "frames");
-  
-  if (!fs.existsSync(framesDir)) fs.mkdirSync(framesDir);
 
-  console.log("Memulai browser untuk render...");
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
-  
+  if (!fs.existsSync(htmlFile)) {
+    console.error(\`[Error] File HTML tidak ditemukan: \${htmlFile}\`);
+    console.error("Pastikan file HTML hasil unduhan berada di direktori yang sama dengan render.js.");
+    process.exit(1);
+  }
+
+  // Verifikasi ffmpeg di PATH
+  try {
+    execSync("ffmpeg -version", { stdio: "ignore" });
+  } catch (e) {
+    console.error("[Error] FFmpeg tidak terdeteksi di PATH sistem.");
+    console.error("Silakan instal FFmpeg terlebih dahulu agar dapat menggabungkan frame menjadi video MP4.");
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(framesDir)) {
+    fs.mkdirSync(framesDir, { recursive: true });
+  }
+
+  console.log("Memulai browser Chromium untuk render...");
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+  } catch (err) {
+    console.error("[Error] Gagal meluncurkan Chromium. Jalankan: npx playwright install chromium", err);
+    process.exit(1);
+  }
+
+  const page = await browser.newPage({ viewport: { width: ${canvasWidth}, height: ${canvasHeight} } });
+
+  console.log(\`Membuka file: file://\${htmlFile}\`);
   await page.goto("file://" + htmlFile, { waitUntil: "networkidle" });
   await page.evaluate(() => document.fonts.ready);
 
   const duration = await page.evaluate(() => window.DURATION || 30);
-  const fps = 30;
-  const totalFrames = Math.round(duration * fps);
+  const videoFps = ${fps};
+  const totalFrames = Math.round(duration * videoFps);
 
-  console.log(\`Merender \${totalFrames} frame (\${duration} detik @ 30fps)...\`);
+  console.log(\`Merender \${totalFrames} frame (\${duration} detik @ \${videoFps}fps)...\`);
 
   for (let i = 0; i <= totalFrames; i++) {
-    const time = i / fps;
+    const time = i / videoFps;
     await page.evaluate((t) => window.seek(t), time);
-    
-    // Screenshot panggung #stage
+
     const stage = await page.$("#stage");
+    if (!stage) {
+      console.error("[Error] Elemen #stage tidak ditemukan pada file HTML.");
+      break;
+    }
     const framePath = path.join(framesDir, \`frame_\${String(i).padStart(5, "0")}.png\`);
     await stage.screenshot({ path: framePath });
 
-    if (i % 30 === 0) {
-      console.log(\`Progres: \${Math.round((i / totalFrames) * 100)}% (\${Math.round(time)}s / \${duration}s)\`);
+    if (i % videoFps === 0 || i === totalFrames) {
+      const pct = Math.round((i / totalFrames) * 100);
+      console.log(\`Progres Render: \${pct}% (\${Math.round(time)}s / \${duration}s)\`);
     }
   }
 
   await browser.close();
   console.log("Frame screenshot selesai. Menggabungkan video dengan FFmpeg...");
 
-  const outputFile = path.resolve(__dirname, "output-1080x1920.mp4");
-  const ffmpegCmd = \`ffmpeg -y -framerate \${fps} -i frames/frame_%05d.png -c:v libx264 -pix_fmt yuv420p -crf 18 "\${outputFile}"\`;
+  const outputFile = path.resolve(__dirname, "${safeFilename || "video"}-output.mp4");
+  const ffmpegCmd = \`ffmpeg -y -framerate \${videoFps} -i frames/frame_%05d.png -c:v libx264 -pix_fmt yuv420p -crf 18 "\${outputFile}"\`;
 
   try {
     execSync(ffmpegCmd, { stdio: "inherit" });
-    console.log(\`Berhasil! Video tersimpan di: \${outputFile}\`);
+    console.log(\`\\n\u{1F389} Berhasil! Video tersimpan di: \${outputFile}\`);
   } catch (err) {
-    console.error("Gagal menjalankan FFmpeg. Pastikan FFmpeg terpasang.", err);
+    console.error("[Error] Gagal menjalankan FFmpeg saat menggabungkan frame:", err);
   }
 }
 
-renderVideo();
+renderVideo().catch((err) => {
+  console.error("Terjadi kesalahan fatal selama rendering:", err);
+  process.exit(1);
+});
 `;
     const blob = new Blob([renderScript], { type: "text/javascript;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1966,17 +3605,563 @@ renderVideo();
     URL.revokeObjectURL(url);
   }
 
+  // audio-library.js
+  var AUDIO_CATEGORIES = [
+    "All",
+    "Voiceover",
+    "Background Music",
+    "Stadium Atmosphere",
+    "Crowd Chant",
+    "Whoosh",
+    "Impact",
+    "Transition Sound",
+    "Celebration Sound",
+    "Other Sound Effects"
+  ];
+  var BUILTIN_AUDIO_ASSETS = [
+    {
+      id: "aud_persib_anthem",
+      name: "Persib Juara Rock Anthem (BGM)",
+      category: "Background Music",
+      fileType: "mp3",
+      fileUrl: "/public/audio/bgm/persib_rock_anthem.mp3",
+      duration: 32.5,
+      volume: 0.85,
+      tags: ["anthem", "rock", "semangat", "juara", "bgm"],
+      license: "Royalty-Free Persib Media Production"
+    },
+    {
+      id: "aud_stadium_roar",
+      name: "Gemuruh Bobotoh Si Jalak Harupat",
+      category: "Stadium Atmosphere",
+      fileType: "mp3",
+      fileUrl: "/public/audio/sfx/stadium_roar.mp3",
+      duration: 28,
+      volume: 0.7,
+      tags: ["stadion", "bobotoh", "chant", "tribun", "atmosphere"],
+      license: "Royalty-Free Audio"
+    },
+    {
+      id: "aud_crowd_celebration",
+      name: "Sorak Sorai Gol Kemenangan",
+      category: "Celebration Sound",
+      fileType: "mp3",
+      fileUrl: "/public/audio/sfx/crowd_goal_cheer.mp3",
+      duration: 8.4,
+      volume: 0.9,
+      tags: ["gol", "selebrasi", "juara", "menang"],
+      license: "Royalty-Free Audio"
+    },
+    {
+      id: "aud_cinematic_impact",
+      name: "Sub Bass Hit & Cinematic Impact",
+      category: "Impact",
+      fileType: "wav",
+      fileUrl: "/public/audio/sfx/cinematic_impact.wav",
+      duration: 3.2,
+      volume: 0.95,
+      tags: ["impact", "bass", "dramatis", "hit", "trailer"],
+      license: "Royalty-Free Audio"
+    },
+    {
+      id: "aud_whoosh_transition",
+      name: "Fast Energy Whoosh Swipe",
+      category: "Whoosh",
+      fileType: "mp3",
+      fileUrl: "/public/audio/sfx/whoosh_fast.mp3",
+      duration: 1.5,
+      volume: 0.8,
+      tags: ["whoosh", "swipe", "transisi", "cepat"],
+      license: "Royalty-Free Audio"
+    },
+    {
+      id: "aud_breaking_alert",
+      name: "Breaking News Ticker Chime",
+      category: "Transition Sound",
+      fileType: "mp3",
+      fileUrl: "/public/audio/sfx/breaking_alert.mp3",
+      duration: 2.1,
+      volume: 0.8,
+      tags: ["breaking", "news", "transfer", "alert", "chime"],
+      license: "Royalty-Free Audio"
+    }
+  ];
+  var customAudioRegistry = /* @__PURE__ */ new Map();
+  function getAllAudioAssets() {
+    const customList = Array.from(customAudioRegistry.values());
+    return [...BUILTIN_AUDIO_ASSETS, ...customList];
+  }
+  function getAudioAssetById(assetId) {
+    if (!assetId) return null;
+    return getAllAudioAssets().find((a) => a.id === assetId) || null;
+  }
+  function filterAudioAssets(category = "All", searchQuery = "") {
+    let assets = getAllAudioAssets();
+    if (category && category !== "All") {
+      assets = assets.filter((a) => a.category.toLowerCase() === category.toLowerCase());
+    }
+    if (searchQuery && searchQuery.trim() !== "") {
+      const q = searchQuery.toLowerCase().trim();
+      assets = assets.filter(
+        (a) => a.name.toLowerCase().includes(q) || a.tags && a.tags.some((t) => t.toLowerCase().includes(q))
+      );
+    }
+    return assets;
+  }
+  function addUploadedAudio(audioData) {
+    if (!audioData || !audioData.fileUrl) {
+      throw new Error("Data audio tidak lengkap.");
+    }
+    const assetId = audioData.id || `aud_up_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const asset = {
+      id: assetId,
+      name: audioData.name || "Audio Kustom",
+      category: audioData.category || "Background Music",
+      fileType: audioData.fileType || "mp3",
+      fileUrl: audioData.fileUrl,
+      duration: Number(audioData.duration) || 30,
+      volume: Number(audioData.volume) || 0.8,
+      fileSize: Number(audioData.fileSize) || 0,
+      createdAt: audioData.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+      tags: Array.isArray(audioData.tags) ? audioData.tags : ["upload", "audio"],
+      license: "User Uploaded Audio"
+    };
+    customAudioRegistry.set(assetId, asset);
+    return asset;
+  }
+  function recommendAudioForConcept(concept = {}) {
+    const topic = (concept.topic || concept.name || "").toLowerCase();
+    const category = (concept.category || "").toLowerCase();
+    if (topic.includes("transfer") || category.includes("transfer")) {
+      return getAudioAssetById("aud_breaking_alert") || getAudioAssetById("aud_cinematic_impact");
+    }
+    if (topic.includes("menang") || topic.includes("skor") || topic.includes("recap") || category.includes("hasil")) {
+      return getAudioAssetById("aud_crowd_celebration") || getAudioAssetById("aud_persib_anthem");
+    }
+    if (topic.includes("duel") || topic.includes("versus") || category.includes("preview")) {
+      return getAudioAssetById("aud_cinematic_impact") || getAudioAssetById("aud_stadium_roar");
+    }
+    return getAudioAssetById("aud_persib_anthem") || BUILTIN_AUDIO_ASSETS[0];
+  }
+
+  // ai-director.js
+  function sanitizeUserPrompt(rawPrompt) {
+    if (!rawPrompt || typeof rawPrompt !== "string") return "";
+    const trimmed = rawPrompt.trim();
+    const capped = trimmed.slice(0, 2e3);
+    return capped.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "");
+  }
+  function generateProjectWithHeuristic(prompt, options = {}) {
+    const cleanPrompt = sanitizeUserPrompt(prompt);
+    const pLower = cleanPrompt.toLowerCase();
+    const aspectRatio = options.aspectRatio || (pLower.includes("landscape") || pLower.includes("16:9") ? "16:9" : pLower.includes("square") || pLower.includes("1:1") ? "1:1" : "9:16");
+    const totalDuration = Number(options.duration) || 30;
+    const fps = 30;
+    let width = 1080;
+    let height = 1920;
+    if (aspectRatio === "16:9") {
+      width = 1920;
+      height = 1080;
+    } else if (aspectRatio === "1:1") {
+      width = 1080;
+      height = 1080;
+    }
+    let topic = "Persib Bandung Juara";
+    let preset = options.preset || "preset_b";
+    let category = "Hasil Pertandingan";
+    const scoreMatch = cleanPrompt.match(/(\d+)\s*[-–:]\s*(\d+)/);
+    const detectedScore = scoreMatch ? `${scoreMatch[1]}-${scoreMatch[2]}` : "2-1";
+    if (pLower.includes("transfer") || pLower.includes("pemain baru")) {
+      topic = "Wilujeng Sumping Amunisi Baru";
+      category = "Kabar Transfer & Skuad";
+    } else if (pLower.includes("recap") || pLower.includes("pekan") || pLower.includes("mingguan")) {
+      topic = "Rangkuman Klasemen Pekan Ini";
+      category = "Rangkuman Mingguan";
+    } else if (pLower.includes("trivia") || pLower.includes("sejarah") || pLower.includes("rekor")) {
+      topic = "Fakta Menarik Pangeran Biru";
+      category = "Fakta & Trivia Unik";
+    } else if (pLower.includes("duel") || pLower.includes("preview") || pLower.includes("versus")) {
+      topic = "Big Match El Clasico Indonesia";
+      category = "Preview Pertandingan";
+    }
+    const recAudio = recommendAudioForConcept({ topic, category });
+    const scenes = [];
+    scenes.push({
+      id: "sc_ai_1",
+      name: "Intro Identitas",
+      order: 1,
+      duration: 6,
+      title: "PEMBUKA",
+      screenText: topic.toUpperCase(),
+      highlightWord: "PERSIB",
+      narration: `Halo Bobotoh! Inilah tayangan resmi kabar terkini kebanggaan Jawa Barat, Persib Bandung.`,
+      transition: { type: "slash", direction: "right", duration: 0.5 },
+      elements: [
+        {
+          id: "el_ai_1_logo",
+          type: "svg",
+          name: "Perisai Lambang Persib",
+          assetId: "ast_persib_shield",
+          position: { x: Math.round(width / 2 - 100), y: Math.round(height * 0.28) },
+          size: { width: 200, height: 240 },
+          props: { componentId: "svg_persib_shield" },
+          animation: { type: "scale", delay: 0.2, duration: 0.6 }
+        },
+        {
+          id: "el_ai_1_title",
+          type: "text",
+          name: "Judul Pembuka",
+          content: topic,
+          position: { x: 80, y: Math.round(height * 0.55) },
+          size: { width: width - 160, height: 160 },
+          styling: { fontSize: aspectRatio === "16:9" ? 54 : 64, fontWeight: 900, color: "#ffffff" },
+          animation: { type: "slide", delay: 0.3, duration: 0.5 }
+        }
+      ]
+    });
+    if (category === "Kabar Transfer & Skuad") {
+      scenes.push({
+        id: "sc_ai_2",
+        name: "Pengumuman Transfer",
+        order: 2,
+        duration: 6,
+        title: "AMUNISI BARU",
+        screenText: "WILUJENG SUMPING BINTANG BARU",
+        highlightWord: "SUMPING",
+        narration: "Manajemen resmi memperkenalkan penggawa anyar yang siap memperkuat kedalaman skuat Maung Bandung.",
+        transition: { type: "fade", duration: 0.4 },
+        elements: [
+          {
+            id: "el_ai_2_stamp",
+            type: "svg",
+            name: "Stempel Wilujeng Sumping",
+            assetId: "ast_wilujeng_stamp",
+            position: { x: Math.round(width / 2 - 220), y: Math.round(height * 0.32) },
+            size: { width: 440, height: 160 },
+            props: { componentId: "svg_wilujeng_stamp" },
+            animation: { type: "scale", delay: 0.1, duration: 0.5 }
+          },
+          {
+            id: "el_ai_2_jersey",
+            type: "svg",
+            name: "Jersey Nomor 10",
+            assetId: "ast_jersey_no10",
+            position: { x: Math.round(width / 2 - 160), y: Math.round(height * 0.5) },
+            size: { width: 320, height: 360 },
+            props: { componentId: "svg_jersey_no10" },
+            animation: { type: "slide", delay: 0.3, duration: 0.6 }
+          }
+        ]
+      });
+    } else {
+      scenes.push({
+        id: "sc_ai_2",
+        name: "Hasil Skor Akhir",
+        order: 2,
+        duration: 6,
+        title: "SKOR AKHIR",
+        screenText: `PERSIB UNGGUL ${detectedScore} DI KANDANG`,
+        highlightWord: detectedScore,
+        narration: `Pertandingan sengit berakhir manis. Pangeran Biru sukses mengunci poin penuh dengan skor akhir ${detectedScore}.`,
+        transition: { type: "slash", direction: "left", duration: 0.4 },
+        elements: [
+          {
+            id: "el_ai_2_board",
+            type: "svg",
+            name: "Papan Skor Stadion",
+            assetId: "ast_scoreboard_stadium",
+            position: { x: Math.round(width / 2 - 370), y: Math.round(height * 0.3) },
+            size: { width: 740, height: 320 },
+            props: { componentId: "svg_scoreboard_stadium" },
+            animation: { type: "scale", delay: 0.1, duration: 0.6 }
+          }
+        ]
+      });
+    }
+    scenes.push({
+      id: "sc_ai_3",
+      name: "Sorotan Data & Taktik",
+      order: 3,
+      duration: 6,
+      title: "STATISTIK DUEL",
+      screenText: "DOMINASI PENGUASAAN BOLA & SERANGAN",
+      highlightWord: "DOMINASI",
+      narration: "Statistik pertandingan membuktikan keunggulan lini tengah dan agresivitas serangan sayap sepanjang 90 menit.",
+      transition: { type: "fade", duration: 0.4 },
+      elements: [
+        {
+          id: "el_ai_3_radar",
+          type: "svg",
+          name: "Radar Taktik Antar Lini",
+          assetId: "ast_duel_radar",
+          position: { x: Math.round(width / 2 - 200), y: Math.round(height * 0.32) },
+          size: { width: 400, height: 400 },
+          props: { componentId: "svg_duel_radar" },
+          animation: { type: "rotate", delay: 0.1, duration: 0.7 }
+        }
+      ]
+    });
+    scenes.push({
+      id: "sc_ai_4",
+      name: "Penghargaan Terbaik",
+      order: 4,
+      duration: 6,
+      title: "MAN OF THE MATCH",
+      screenText: "KONTRIBUSI NYATA PEMAIN TERBAIK",
+      highlightWord: "TERBAIK",
+      narration: "Aksi gemilang di atas lapangan membuahkan gelar pemain terbaik dengan kontribusi gol dan umpan kunci.",
+      transition: { type: "slide", direction: "up", duration: 0.4 },
+      elements: [
+        {
+          id: "el_ai_4_badge",
+          type: "svg",
+          name: "Bintang MOTM",
+          assetId: "ast_motm_badge",
+          position: { x: Math.round(width / 2 - 130), y: Math.round(height * 0.34) },
+          size: { width: 260, height: 260 },
+          props: { componentId: "svg_motm_badge" },
+          animation: { type: "scale", delay: 0.1, duration: 0.6 }
+        }
+      ]
+    });
+    scenes.push({
+      id: "sc_ai_5",
+      name: "Penutup Kemenangan",
+      order: 5,
+      duration: 6,
+      title: "JUARA SEJATI",
+      screenText: "LANGKAH MANTAP MENUJU TANGGA JUARA",
+      highlightWord: "JUARA",
+      narration: "Tiga poin berharga untuk menjaga asa di papan atas klasemen. Kawal terus perjuangan Pangeran Biru sampai tuntas!",
+      transition: { type: "slash", direction: "right", duration: 0.5 },
+      elements: [
+        {
+          id: "el_ai_5_trophy",
+          type: "svg",
+          name: "Piala Juara Emas",
+          assetId: "ast_trophy_ladder",
+          position: { x: Math.round(width / 2 - 150), y: Math.round(height * 0.32) },
+          size: { width: 300, height: 380 },
+          props: { componentId: "svg_trophy_ladder" },
+          animation: { type: "scale", delay: 0.1, duration: 0.6 }
+        }
+      ]
+    });
+    const project = createDefaultProject({
+      name: topic,
+      videoTitle: topic,
+      aspectRatio,
+      canvas: { width, height },
+      fps,
+      totalDuration,
+      metadata: {
+        category,
+        preset,
+        source: "gemini_creative_director",
+        originalPrompt: cleanPrompt
+      },
+      audio: {
+        enabled: true,
+        assetId: recAudio ? recAudio.id : "aud_persib_anthem",
+        bgmUrl: recAudio ? recAudio.fileUrl : "/public/audio/bgm/persib_rock_anthem.mp3",
+        volume: 0.85,
+        muted: false
+      },
+      scenes
+    });
+    recalculateSceneTimings(project);
+    return project;
+  }
+  async function reviseProjectWithAI(currentProject, revisionPrompt, targetSceneId = null) {
+    if (!currentProject || !Array.isArray(currentProject.scenes)) {
+      throw new Error("Project aktif tidak valid.");
+    }
+    const cleanPrompt = sanitizeUserPrompt(revisionPrompt);
+    if (!cleanPrompt) {
+      throw new Error("Instruksi revisi tidak boleh kosong.");
+    }
+    const pLower = cleanPrompt.toLowerCase();
+    const revised = JSON.parse(JSON.stringify(currentProject));
+    let targetScene = null;
+    if (targetSceneId) {
+      targetScene = revised.scenes.find((s) => String(s.id) === String(targetSceneId));
+    }
+    if (!targetScene) {
+      if (pLower.includes("scene 1") || pLower.includes("scene pertama") || pLower.includes("adegan 1") || pLower.includes("intro")) {
+        targetScene = revised.scenes[0];
+      } else if (pLower.includes("scene 2") || pLower.includes("scene kedua") || pLower.includes("adegan 2")) {
+        targetScene = revised.scenes[1];
+      } else if (pLower.includes("scene 3") || pLower.includes("scene ketiga") || pLower.includes("adegan 3")) {
+        targetScene = revised.scenes[2];
+      } else if (pLower.includes("scene 4") || pLower.includes("scene keempat") || pLower.includes("adegan 4")) {
+        targetScene = revised.scenes[3];
+      } else if (pLower.includes("scene 5") || pLower.includes("scene kelima") || pLower.includes("adegan 5") || pLower.includes("penutup")) {
+        targetScene = revised.scenes[revised.scenes.length - 1];
+      } else {
+        targetScene = revised.scenes[0];
+      }
+    }
+    let summary = "Revisi diterapkan.";
+    if (pLower.includes("landscape") || pLower.includes("16:9")) {
+      revised.aspectRatio = "16:9";
+      revised.canvas.width = 1920;
+      revised.canvas.height = 1080;
+      summary = "Format kanvas diubah menjadi Landscape 16:9 (1920\xD71080).";
+    } else if (pLower.includes("square") || pLower.includes("persegi") || pLower.includes("1:1")) {
+      revised.aspectRatio = "1:1";
+      revised.canvas.width = 1080;
+      revised.canvas.height = 1080;
+      summary = "Format kanvas diubah menjadi Persegi 1:1 (1080\xD71080).";
+    } else if (pLower.includes("portrait") || pLower.includes("vertikal") || pLower.includes("9:16")) {
+      revised.aspectRatio = "9:16";
+      revised.canvas.width = 1080;
+      revised.canvas.height = 1920;
+      summary = "Format kanvas diubah menjadi Vertikal 9:16 (1080\xD71920).";
+    }
+    const durMatch = cleanPrompt.match(/(\d+)\s*(?:detik|s|second)/i);
+    if (durMatch && (pLower.includes("durasi") || pLower.includes("detik"))) {
+      const newDur = Math.max(1, Math.min(60, Number(durMatch[1])));
+      if (targetScene) {
+        targetScene.duration = newDur;
+        summary = `Durasi ${targetScene.title || targetScene.name} diubah menjadi ${newDur} detik.`;
+      }
+    }
+    if (pLower.includes("background") || pLower.includes("latar")) {
+      if (targetScene) {
+        targetScene.background = "radial-gradient(ellipse at 50% 20%, #003da5 0%, #05070e 80%)";
+        summary = `Latar belakang ${targetScene.title || targetScene.name} diperbarui lebih dramatis.`;
+      }
+    }
+    if (pLower.includes("lebih besar") || pLower.includes("perbesar") || pLower.includes("font")) {
+      if (targetScene && Array.isArray(targetScene.elements)) {
+        const textElem = targetScene.elements.find((e) => e.type === "text");
+        if (textElem) {
+          if (!textElem.styling) textElem.styling = {};
+          textElem.styling.fontSize = Math.min(120, (Number(textElem.styling.fontSize) || 48) + 16);
+          summary = `Ukuran teks pada ${targetScene.title || targetScene.name} diperbesar.`;
+        }
+      }
+    }
+    if (pLower.includes("animasi") || pLower.includes("smooth")) {
+      if (targetScene && Array.isArray(targetScene.elements)) {
+        targetScene.elements.forEach((el) => {
+          if (!el.animation) el.animation = {};
+          el.animation.type = pLower.includes("scale") ? "scale" : "fade";
+          el.animation.duration = 0.8;
+          el.animation.easing = "power2.out";
+        });
+        summary = `Animasi elemen pada ${targetScene.title || targetScene.name} diubah menjadi lebih halus.`;
+      }
+    }
+    if (pLower.includes("trophy") || pLower.includes("piala")) {
+      if (targetScene && Array.isArray(targetScene.elements)) {
+        const visualElem = targetScene.elements.find((e) => ["image", "svg", "component"].includes(e.type));
+        if (visualElem) {
+          visualElem.type = "svg";
+          visualElem.assetId = "ast_trophy_ladder";
+          visualElem.props = { componentId: "svg_trophy_ladder" };
+          summary = `Aset visual pada ${targetScene.title || targetScene.name} diganti dengan Piala Juara Emas.`;
+        }
+      }
+    } else if (pLower.includes("jersey") || pLower.includes("baju")) {
+      if (targetScene && Array.isArray(targetScene.elements)) {
+        const visualElem = targetScene.elements.find((e) => ["image", "svg", "component"].includes(e.type));
+        if (visualElem) {
+          visualElem.type = "svg";
+          visualElem.assetId = "ast_jersey_no10";
+          visualElem.props = { componentId: "svg_jersey_no10" };
+          summary = `Aset visual pada ${targetScene.title || targetScene.name} diganti dengan Jersey No. 10.`;
+        }
+      }
+    }
+    recalculateSceneTimings(revised);
+    const validated = validateProject(revised);
+    return {
+      success: true,
+      project: validated.project,
+      summary
+    };
+  }
+
   // app.js
+  var HistoryManager = class {
+    constructor(maxStates = 40) {
+      this.undoStack = [];
+      this.redoStack = [];
+      this.maxStates = maxStates;
+    }
+    push(project) {
+      if (!project) return;
+      this.undoStack.push(JSON.parse(JSON.stringify(project)));
+      if (this.undoStack.length > this.maxStates) {
+        this.undoStack.shift();
+      }
+      this.redoStack = [];
+      updateUndoRedoUI();
+    }
+    undo(currentProject) {
+      if (this.undoStack.length === 0) return null;
+      this.redoStack.push(JSON.parse(JSON.stringify(currentProject)));
+      const previous = this.undoStack.pop();
+      updateUndoRedoUI();
+      return previous;
+    }
+    redo(currentProject) {
+      if (this.redoStack.length === 0) return null;
+      this.undoStack.push(JSON.parse(JSON.stringify(currentProject)));
+      const next = this.redoStack.pop();
+      updateUndoRedoUI();
+      return next;
+    }
+    canUndo() {
+      return this.undoStack.length > 0;
+    }
+    canRedo() {
+      return this.redoStack.length > 0;
+    }
+  };
+  var history = new HistoryManager(40);
   var activeTabId = DEFAULT_TAB;
-  var tabStateCache = {};
+  var tabProjectCache = {};
   Object.keys(PERSIB_TABS).forEach((tabKey) => {
-    tabStateCache[tabKey] = JSON.parse(JSON.stringify(PERSIB_TABS[tabKey]));
+    tabProjectCache[tabKey] = migrateLegacyTemplateToProject(PERSIB_TABS[tabKey]);
   });
-  var appState = tabStateCache[activeTabId];
-  var themeToggleBtn = document.getElementById("themeToggleBtn");
+  var appProject = tabProjectCache[activeTabId];
+  var selectedSceneId = appProject.scenes[0]?.id || "sc_1";
+  var selectedElementId = null;
+  var currentPlayheadTime = 0;
+  var isPlaying = false;
+  var currentStageScale = 0.24;
+  var timelinePxPerSec = 40;
+  var inputDebounceTimer = null;
+  function debouncedHistoryPush() {
+    clearTimeout(inputDebounceTimer);
+    inputDebounceTimer = setTimeout(() => {
+      history.push(appProject);
+    }, 400);
+  }
+  var btnUndo = document.getElementById("btnUndo");
+  var btnRedo = document.getElementById("btnRedo");
   var tabButtons = document.querySelectorAll("[data-tab-id]");
-  var quickDurButtons = document.querySelectorAll("[data-quick-dur]");
-  var btnResetFramework = document.getElementById("btnResetFramework");
+  var themeToggleBtn = document.getElementById("themeToggleBtn");
+  var btnImportJson = document.getElementById("btnImportJson");
+  var fileImportJson = document.getElementById("fileImportJson");
+  var btnDownloadJson = document.getElementById("btnDownloadJson");
+  var btnDownloadHtml = document.getElementById("btnDownloadHtml");
+  var btnDownloadRenderPkg = document.getElementById("btnDownloadRenderPkg");
+  var btnExportPrompt = document.getElementById("btnExportPrompt");
+  var panelTabButtons = document.querySelectorAll("[data-panel-tab]");
+  var tabContentScenes = document.getElementById("tabContentScenes");
+  var tabContentLayers = document.getElementById("tabContentLayers");
+  var tabContentConcept = document.getElementById("tabContentConcept");
+  var sceneCountBadge = document.getElementById("sceneCountBadge");
+  var layerCountBadge = document.getElementById("layerCountBadge");
+  var btnAddScene = document.getElementById("btnAddScene");
+  var sceneCardList = document.getElementById("sceneCardList");
+  var activeSceneLayerTitle = document.getElementById("activeSceneLayerTitle");
+  var selNewElementType = document.getElementById("selNewElementType");
+  var btnAddElement = document.getElementById("btnAddElement");
+  var layerTreeList = document.getElementById("layerTreeList");
   var formTopic = document.getElementById("formTopic");
   var formCategory = document.getElementById("formCategory");
   var formAngle = document.getElementById("formAngle");
@@ -1986,10 +4171,6 @@ renderVideo();
   var formDuration = document.getElementById("formDuration");
   var formMetaphor = document.getElementById("formMetaphor");
   var presetButtons = document.querySelectorAll("[data-preset-val]");
-  var scenesContainer = document.getElementById("scenesContainer");
-  var btnAddScene = document.getElementById("btnAddScene");
-  var btnGenerate = document.getElementById("btnGenerate");
-  var stageIframe = document.getElementById("stageIframe");
   var colorPrimary = document.getElementById("colorPrimary");
   var colorSecondary = document.getElementById("colorSecondary");
   var colorText = document.getElementById("colorText");
@@ -1998,290 +4179,13 @@ renderVideo();
   var hexSecondary = document.getElementById("hexSecondary");
   var hexText = document.getElementById("hexText");
   var hexAccent = document.getElementById("hexAccent");
-  var btnDownloadHtml = document.getElementById("btnDownloadHtml");
-  var btnExportPrompt = document.getElementById("btnExportPrompt");
-  var btnDownloadRenderPkg = document.getElementById("btnDownloadRenderPkg");
-  var promptModal = document.getElementById("promptModal");
-  var promptCodeArea = document.getElementById("promptCodeArea");
-  var btnCopyModalPrompt = document.getElementById("btnCopyModalPrompt");
-  var btnCloseModal = document.getElementById("btnCloseModal");
-  var toastNotice = document.getElementById("toastNotice");
-  function initTheme() {
-    const savedTheme = localStorage.getItem("mg_studio_theme") || "dark";
-    document.documentElement.setAttribute("data-theme", savedTheme);
-    updateThemeButtonUI(savedTheme);
-  }
-  function updateThemeButtonUI(theme) {
-    if (theme === "light") {
-      themeToggleBtn.textContent = "\u263E Gelap";
-      themeToggleBtn.setAttribute("aria-label", "Ganti ke mode gelap");
-    } else {
-      themeToggleBtn.textContent = "\u263C Terang";
-      themeToggleBtn.setAttribute("aria-label", "Ganti ke mode terang");
-    }
-  }
-  themeToggleBtn.addEventListener("click", () => {
-    const current = document.documentElement.getAttribute("data-theme") || "dark";
-    const target = current === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", target);
-    localStorage.setItem("mg_studio_theme", target);
-    updateThemeButtonUI(target);
-  });
-  function showToast(message) {
-    toastNotice.textContent = message;
-    toastNotice.classList.add("show");
-    setTimeout(() => {
-      toastNotice.classList.remove("show");
-    }, 2500);
-  }
-  function syncStateToForm() {
-    formTopic.value = appState.topic;
-    formCategory.value = appState.category;
-    formAngle.value = appState.angle;
-    formAudience.value = appState.audience;
-    formGoal.value = appState.goal;
-    formTone.value = appState.tone;
-    formDuration.value = appState.duration;
-    formMetaphor.value = appState.metaphor;
-    presetButtons.forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.presetVal === appState.preset);
-    });
-    quickDurButtons.forEach((btn) => {
-      btn.classList.toggle("active", parseInt(btn.dataset.quickDur, 10) === appState.duration);
-    });
-    colorPrimary.value = appState.colors.primary;
-    colorSecondary.value = appState.colors.secondary;
-    colorText.value = appState.colors.text;
-    colorAccent.value = appState.colors.accent;
-    hexPrimary.textContent = appState.colors.primary;
-    hexSecondary.textContent = appState.colors.secondary;
-    hexText.textContent = appState.colors.text;
-    hexAccent.textContent = appState.colors.accent;
-    renderScenesEditor();
-  }
-  function renderScenesEditor() {
-    scenesContainer.innerHTML = "";
-    appState.scenes.forEach((scene, index) => {
-      const sceneEl = document.createElement("div");
-      sceneEl.className = "scene-block";
-      sceneEl.innerHTML = `
-      <div class="scene-block-header">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span class="scene-pill">Adegan ${index + 1}</span>
-          <span style="font-size: 13px; font-weight: 600;">${escapeHTML2(scene.title || "Bagian " + (index + 1))}</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 11px; color: var(--text-muted);">${scene.duration}s</span>
-          ${appState.scenes.length > 2 ? `<button type="button" class="btn btn-secondary" data-del-scene="${index}" style="min-height: 28px; padding: 2px 8px; font-size: 11px;">Hapus</button>` : ""}
-        </div>
-      </div>
-      <div class="scene-block-body">
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Judul Adegan</label>
-            <input type="text" class="form-input scene-input" data-scene-idx="${index}" data-field="title" value="${escapeHTML2(scene.title)}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Durasi (detik)</label>
-            <input type="number" min="2" max="30" class="form-input scene-input" data-scene-idx="${index}" data-field="duration" value="${scene.duration}">
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Teks Layar (Maksimal 4 kata kunci)</label>
-          <input type="text" class="form-input scene-input" data-scene-idx="${index}" data-field="screenText" value="${escapeHTML2(scene.screenText)}">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Kata Aksen (Highlight Warna Emas)</label>
-          <input type="text" class="form-input scene-input" data-scene-idx="${index}" data-field="highlightWord" value="${escapeHTML2(scene.highlightWord || "")}">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Naskah Narasi Bobotoh</label>
-          <textarea class="form-textarea scene-input" data-scene-idx="${index}" data-field="narration">${escapeHTML2(scene.narration)}</textarea>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Angka / Milestone (Opsional)</label>
-            <input type="text" placeholder="misal: 3 - 1 atau 58%" class="form-input scene-input" data-scene-idx="${index}" data-field="dataValue" value="${escapeHTML2(scene.dataValue || "")}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Label Data</label>
-            <input type="text" placeholder="misal: Skor Akhir / Possession" class="form-input scene-input" data-scene-idx="${index}" data-field="dataLabel" value="${escapeHTML2(scene.dataLabel || "")}">
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Aksi Visual (Referensi Gerakan)</label>
-          <input type="text" class="form-input scene-input" data-scene-idx="${index}" data-field="visualAction" value="${escapeHTML2(scene.visualAction || "")}">
-        </div>
-      </div>
-    `;
-      scenesContainer.appendChild(sceneEl);
-    });
-    const sceneInputs = scenesContainer.querySelectorAll(".scene-input");
-    sceneInputs.forEach((input) => {
-      input.addEventListener("input", (e) => {
-        const idx = parseInt(e.target.dataset.sceneIdx, 10);
-        const field = e.target.dataset.field;
-        if (appState.scenes[idx]) {
-          if (field === "duration") {
-            appState.scenes[idx][field] = parseInt(e.target.value, 10) || 3;
-          } else {
-            appState.scenes[idx][field] = e.target.value;
-          }
-        }
-      });
-    });
-    const delButtons = scenesContainer.querySelectorAll("[data-del-scene]");
-    delButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const idx = parseInt(btn.dataset.delScene, 10);
-        if (appState.scenes.length > 2) {
-          appState.scenes.splice(idx, 1);
-          renderScenesEditor();
-          showToast("Adegan dihapus.");
-        }
-      });
-    });
-  }
-  btnAddScene.addEventListener("click", () => {
-    const newId = appState.scenes.length + 1;
-    appState.scenes.push({
-      id: newId,
-      title: `Adegan Baru ${newId}`,
-      duration: 5,
-      narration: "Tuliskan narasi suara untuk adegan baru ini...",
-      screenText: "POIN PENTING BARU",
-      highlightWord: "PENTING",
-      dataValue: "",
-      dataLabel: "",
-      visualAction: "Elemen grafis masuk rapi di panggung."
-    });
-    renderScenesEditor();
-    showToast("Adegan baru ditambahkan.");
-  });
-  function bindColorInput(inputEl, hexEl, key) {
-    inputEl.addEventListener("input", (e) => {
-      const val = e.target.value;
-      hexEl.textContent = val;
-      appState.colors[key] = val;
-    });
-  }
-  bindColorInput(colorPrimary, hexPrimary, "primary");
-  bindColorInput(colorSecondary, hexSecondary, "secondary");
-  bindColorInput(colorText, hexText, "text");
-  bindColorInput(colorAccent, hexAccent, "accent");
-  presetButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const presetVal = btn.dataset.presetVal;
-      appState.preset = presetVal;
-      if (presetVal === "preset_a") {
-        appState.colors = { primary: "#003da5", secondary: "#fef3c7", text: "#0f172a", accent: "#d97706" };
-        appState.metaphor = "chart";
-      } else if (presetVal === "preset_c") {
-        appState.colors = { primary: "#003da5", secondary: "#090d16", text: "#ffffff", accent: "#f0a500" };
-        appState.metaphor = "meter";
-      } else {
-        appState.colors = { primary: "#003da5", secondary: "#0a0a0a", text: "#ffffff", accent: "#f0a500" };
-        appState.metaphor = "card";
-      }
-      syncStateToForm();
-      compileAndRender();
-    });
-  });
-  formTopic.addEventListener("input", (e) => {
-    appState.topic = e.target.value;
-  });
-  formCategory.addEventListener("change", (e) => {
-    appState.category = e.target.value;
-  });
-  formAngle.addEventListener("input", (e) => {
-    appState.angle = e.target.value;
-  });
-  formAudience.addEventListener("change", (e) => {
-    appState.audience = e.target.value;
-  });
-  formGoal.addEventListener("change", (e) => {
-    appState.goal = e.target.value;
-  });
-  formTone.addEventListener("change", (e) => {
-    appState.tone = e.target.value;
-  });
-  formDuration.addEventListener("change", (e) => {
-    appState.duration = parseInt(e.target.value, 10);
-  });
-  formMetaphor.addEventListener("change", (e) => {
-    appState.metaphor = e.target.value;
-  });
-  tabButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const tabId = btn.dataset.tabId;
-      if (PERSIB_TABS[tabId]) {
-        tabStateCache[activeTabId] = JSON.parse(JSON.stringify(appState));
-        activeTabId = tabId;
-        tabButtons.forEach((b) => {
-          const isActive = b.dataset.tabId === tabId;
-          b.classList.toggle("active", isActive);
-          b.setAttribute("aria-selected", isActive ? "true" : "false");
-        });
-        appState = tabStateCache[tabId];
-        syncStateToForm();
-        compileAndRender();
-        showToast(`Format "${PERSIB_TABS[tabId].name}" aktif!`);
-      }
-    });
-  });
-  quickDurButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const dur = parseInt(btn.dataset.quickDur, 10);
-      appState.duration = dur;
-      formDuration.value = String(dur);
-      quickDurButtons.forEach((b) => b.classList.toggle("active", b === btn));
-      const currentTotal = appState.scenes.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
-      if (currentTotal > 0) {
-        appState.scenes.forEach((s) => {
-          s.duration = Math.max(2, Math.round(s.duration / currentTotal * dur));
-        });
-      }
-      renderScenesEditor();
-      compileAndRender();
-      showToast(`Durasi disetel ke ${dur} detik`);
-    });
-  });
-  if (btnResetFramework) {
-    btnResetFramework.addEventListener("click", () => {
-      if (PERSIB_TABS[activeTabId]) {
-        tabStateCache[activeTabId] = JSON.parse(JSON.stringify(PERSIB_TABS[activeTabId]));
-        appState = tabStateCache[activeTabId];
-        syncStateToForm();
-        compileAndRender();
-        showToast(`Format "${PERSIB_TABS[activeTabId].name}" direset ke bawaan!`);
-      }
-    });
-  }
-  function compileAndRender() {
-    btnGenerate.disabled = true;
-    btnGenerate.textContent = "Mengompilasi Animasi...";
-    try {
-      const compiledHTML = generateMotionGraphicHTML(appState);
-      stageIframe.srcdoc = compiledHTML;
-      parentTimeScrubber.max = appState.duration || 30;
-      parentTimeDisplay.textContent = "00:00 / " + formatTime2(appState.duration || 30);
-      showToast("Motion Graphic berhasil digenerate!");
-    } catch (err) {
-      console.error("Compilation error:", err);
-      showToast("Terjadi kesalahan saat kompilasi.");
-    } finally {
-      setTimeout(() => {
-        btnGenerate.disabled = false;
-        btnGenerate.textContent = "GENERATE MOTION GRAPHIC";
-      }, 400);
-    }
-  }
-  btnGenerate.addEventListener("click", compileAndRender);
+  var btnResetFramework = document.getElementById("btnResetFramework");
+  var canvasViewport = document.getElementById("canvasViewport");
+  var canvasStageWrapper = document.getElementById("canvasStageWrapper");
+  var stageIframe = document.getElementById("stageIframe");
+  var canvasOverlay = document.getElementById("canvasOverlay");
+  var canvasActiveInfo = document.getElementById("canvasActiveInfo");
+  var btnGenerate = document.getElementById("btnGenerate");
   var btnParentPlayPause = document.getElementById("btnParentPlayPause");
   var parentIconPlay = document.getElementById("parentIconPlay");
   var btnParentRestart = document.getElementById("btnParentRestart");
@@ -2289,7 +4193,1282 @@ renderVideo();
   var parentTimeDisplay = document.getElementById("parentTimeDisplay");
   var parentSpeedSelect = document.getElementById("parentSpeedSelect");
   var btnParentRecordMode = document.getElementById("btnParentRecordMode");
-  var isStudioPlaying = false;
+  var inspectorEmptyNotice = document.getElementById("inspectorEmptyNotice");
+  var elementInspector = document.getElementById("elementInspector");
+  var sceneInspector = document.getElementById("sceneInspector");
+  var elemInspectorTitle = document.getElementById("elemInspectorTitle");
+  var elemTypeBadge = document.getElementById("elemTypeBadge");
+  var btnInspectorLock = document.getElementById("btnInspectorLock");
+  var btnInspectorVisible = document.getElementById("btnInspectorVisible");
+  var btnInspectorDuplicate = document.getElementById("btnInspectorDuplicate");
+  var btnInspectorDelete = document.getElementById("btnInspectorDelete");
+  var propElemName = document.getElementById("propElemName");
+  var propElemX = document.getElementById("propElemX");
+  var propElemY = document.getElementById("propElemY");
+  var propElemW = document.getElementById("propElemW");
+  var propElemH = document.getElementById("propElemH");
+  var propElemRot = document.getElementById("propElemRot");
+  var propElemOpacity = document.getElementById("propElemOpacity");
+  var inspectorTextGroup = document.getElementById("inspectorTextGroup");
+  var propElemContent = document.getElementById("propElemContent");
+  var propElemHighlight = document.getElementById("propElemHighlight");
+  var propElemFontSize = document.getElementById("propElemFontSize");
+  var propElemColor = document.getElementById("propElemColor");
+  var propElemBgColor = document.getElementById("propElemBgColor");
+  var propElemRadius = document.getElementById("propElemRadius");
+  var propElemAnimType = document.getElementById("propElemAnimType");
+  var propElemAnimDelay = document.getElementById("propElemAnimDelay");
+  var propElemAnimDur = document.getElementById("propElemAnimDur");
+  var propSceneTitle = document.getElementById("propSceneTitle");
+  var propSceneDuration = document.getElementById("propSceneDuration");
+  var propSceneTransitionType = document.getElementById("propSceneTransitionType");
+  var propSceneTransitionDir = document.getElementById("propSceneTransitionDir");
+  var propSceneNarration = document.getElementById("propSceneNarration");
+  var propSceneVisualAction = document.getElementById("propSceneVisualAction");
+  var sceneVoiceoverControlBox = document.getElementById("sceneVoiceoverControlBox");
+  var voStatusBadge = document.getElementById("voStatusBadge");
+  var chkVoEnabled = document.getElementById("chkVoEnabled");
+  var voConfigControls = document.getElementById("voConfigControls");
+  var selVoProvider = document.getElementById("selVoProvider");
+  var voProviderNotice = document.getElementById("voProviderNotice");
+  var selVoLanguage = document.getElementById("selVoLanguage");
+  var selVoVoice = document.getElementById("selVoVoice");
+  var rangeVoSpeed = document.getElementById("rangeVoSpeed");
+  var valVoSpeed = document.getElementById("valVoSpeed");
+  var rangeVoPitch = document.getElementById("rangeVoPitch");
+  var valVoPitch = document.getElementById("valVoPitch");
+  var lblVoParamSecond = document.getElementById("lblVoParamSecond");
+  var voAudioPlayerContainer = document.getElementById("voAudioPlayerContainer");
+  var voPreviewAudioElement = document.getElementById("voPreviewAudioElement");
+  var voAudioMetaDuration = document.getElementById("voAudioMetaDuration");
+  var btnDeleteVoAudio = document.getElementById("btnDeleteVoAudio");
+  var btnPreviewVoSpeech = document.getElementById("btnPreviewVoSpeech");
+  var btnGenerateVoAudio = document.getElementById("btnGenerateVoAudio");
+  var voGenerateProgress = document.getElementById("voGenerateProgress");
+  var btnOpenCloneModal = document.getElementById("btnOpenCloneModal");
+  var voiceCloneModal = document.getElementById("voiceCloneModal");
+  var btnCloseCloneModal = document.getElementById("btnCloseCloneModal");
+  var btnCancelCloneModal = document.getElementById("btnCancelCloneModal");
+  var inpCloneVoiceName = document.getElementById("inpCloneVoiceName");
+  var inpCloneVoiceDesc = document.getElementById("inpCloneVoiceDesc");
+  var inpCloneSpeakerName = document.getElementById("inpCloneSpeakerName");
+  var dropZoneCloneAudio = document.getElementById("dropZoneCloneAudio");
+  var fileCloneAudioSample = document.getElementById("fileCloneAudioSample");
+  var lblCloneAudioFile = document.getElementById("lblCloneAudioFile");
+  var chkCloneConsent = document.getElementById("chkCloneConsent");
+  var cloneProgressNotice = document.getElementById("cloneProgressNotice");
+  var customVoiceListContainer = document.getElementById("customVoiceListContainer");
+  var btnSubmitVoiceClone = document.getElementById("btnSubmitVoiceClone");
+  var cloneAudioSampleBase64 = null;
+  var cloneAudioSampleMimeType = "audio/mpeg";
+  var chkAudioEnabled = document.getElementById("chkAudioEnabled");
+  var selAudioPreset = document.getElementById("selAudioPreset");
+  var inpAudioUrl = document.getElementById("inpAudioUrl");
+  var rngAudioVolume = document.getElementById("rngAudioVolume");
+  var lblAudioVolume = document.getElementById("lblAudioVolume");
+  var btnAudioMute = document.getElementById("btnAudioMute");
+  var selectCanvasRatio = document.getElementById("selectCanvasRatio");
+  var btnOpenAssetLibrary = document.getElementById("btnOpenAssetLibrary");
+  var btnOpenAssetModalFromLayers = document.getElementById("btnOpenAssetModalFromLayers");
+  var assetBrowserModal = document.getElementById("assetBrowserModal");
+  var btnCloseAssetModal = document.getElementById("btnCloseAssetModal");
+  var btnCancelAssetModal = document.getElementById("btnCancelAssetModal");
+  var btnApplySelectedAsset = document.getElementById("btnApplySelectedAsset");
+  var assetSearchInput = document.getElementById("assetSearchInput");
+  var assetCategoryChips = document.getElementById("assetCategoryChips");
+  var assetGalleryGrid = document.getElementById("assetGalleryGrid");
+  var assetSelectedInfo = document.getElementById("assetSelectedInfo");
+  var assetDropzone = document.getElementById("assetDropzone");
+  var assetFileInput = document.getElementById("assetFileInput");
+  var btnTriggerUpload = document.getElementById("btnTriggerUpload");
+  var uploadProgress = document.getElementById("uploadProgress");
+  var inspectorAssetGroup = document.getElementById("inspectorAssetGroup");
+  var propElemAssetId = document.getElementById("propElemAssetId");
+  var propElemFitMode = document.getElementById("propElemFitMode");
+  var btnInspectChangeAsset = document.getElementById("btnInspectChangeAsset");
+  var btnInspectRemoveAsset = document.getElementById("btnInspectRemoveAsset");
+  var btnOpenAiDirector = document.getElementById("btnOpenAiDirector");
+  var aiDirectorModal = document.getElementById("aiDirectorModal");
+  var btnCloseAiModal = document.getElementById("btnCloseAiModal");
+  var btnCancelAiModal = document.getElementById("btnCancelAiModal");
+  var btnRunAiGenerate = document.getElementById("btnRunAiGenerate");
+  var btnApplyAiProject = document.getElementById("btnApplyAiProject");
+  var aiPromptInput = document.getElementById("aiPromptInput");
+  var aiAspectRatio = document.getElementById("aiAspectRatio");
+  var aiDuration = document.getElementById("aiDuration");
+  var aiPreset = document.getElementById("aiPreset");
+  var aiInputSection = document.getElementById("aiInputSection");
+  var aiLoadingSection = document.getElementById("aiLoadingSection");
+  var aiLoadingStatusText = document.getElementById("aiLoadingStatusText");
+  var aiLoadingSubtext = document.getElementById("aiLoadingSubtext");
+  var aiResultSection = document.getElementById("aiResultSection");
+  var aiResultTitle = document.getElementById("aiResultTitle");
+  var aiResultMeta = document.getElementById("aiResultMeta");
+  var aiResultAudioBadge = document.getElementById("aiResultAudioBadge");
+  var aiStoryboardCards = document.getElementById("aiStoryboardCards");
+  var btnOpenAiRevision = document.getElementById("btnOpenAiRevision");
+  var aiRevisionModal = document.getElementById("aiRevisionModal");
+  var btnCloseAiRevModal = document.getElementById("btnCloseAiRevModal");
+  var btnCancelAiRevModal = document.getElementById("btnCancelAiRevModal");
+  var btnApplyAiRevision = document.getElementById("btnApplyAiRevision");
+  var aiRevTargetScene = document.getElementById("aiRevTargetScene");
+  var aiRevPromptInput = document.getElementById("aiRevPromptInput");
+  var tabBtnVisualAssets = document.getElementById("tabBtnVisualAssets");
+  var tabBtnAudioAssets = document.getElementById("tabBtnAudioAssets");
+  var visualAssetsView = document.getElementById("visualAssetsView");
+  var audioAssetsView = document.getElementById("audioAssetsView");
+  var audioSearchInput = document.getElementById("audioSearchInput");
+  var audioFileInput = document.getElementById("audioFileInput");
+  var btnTriggerAudioUpload = document.getElementById("btnTriggerAudioUpload");
+  var audioDropzone = document.getElementById("audioDropzone");
+  var audioUploadProgress = document.getElementById("audioUploadProgress");
+  var audioCategoryChips = document.getElementById("audioCategoryChips");
+  var audioListContainer = document.getElementById("audioListContainer");
+  var tlTimeDisplay = document.getElementById("tlTimeDisplay");
+  var tlFrameDisplay = document.getElementById("tlFrameDisplay");
+  var tlZoomSlider = document.getElementById("tlZoomSlider");
+  var btnTlFit = document.getElementById("btnTlFit");
+  var tlTracksScroll = document.getElementById("tlTracksScroll");
+  var tlTracksInner = document.getElementById("tlTracksInner");
+  var tlRuler = document.getElementById("tlRuler");
+  var tlSceneBlocksContainer = document.getElementById("tlSceneBlocksContainer");
+  var tlElementBlocksContainer = document.getElementById("tlElementBlocksContainer");
+  var tlAudioBlockContainer = document.getElementById("tlAudioBlockContainer");
+  var tlPlayheadLine = document.getElementById("tlPlayheadLine");
+  var tlPlayheadHandle = document.getElementById("tlPlayheadHandle");
+  var promptModal = document.getElementById("promptModal");
+  var promptCodeArea = document.getElementById("promptCodeArea");
+  var btnCopyModalPrompt = document.getElementById("btnCopyModalPrompt");
+  var btnCloseModal = document.getElementById("btnCloseModal");
+  var toastNotice = document.getElementById("toastNotice");
+  function showToast(message) {
+    if (!toastNotice) return;
+    toastNotice.textContent = message;
+    toastNotice.classList.add("show");
+    setTimeout(() => {
+      toastNotice.classList.remove("show");
+    }, 2200);
+  }
+  function updateUndoRedoUI() {
+    if (btnUndo) btnUndo.disabled = !history.canUndo();
+    if (btnRedo) btnRedo.disabled = !history.canRedo();
+  }
+  function formatTime2(sec) {
+    const s = Math.max(0, Math.floor(sec));
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    return String(m).padStart(2, "0") + ":" + String(rem).padStart(2, "0");
+  }
+  function formatTimeWithFrames(sec, fps = 30) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    const f = Math.floor((sec - Math.floor(sec)) * fps);
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(f).padStart(2, "0")}`;
+  }
+  function escapeHTML2(str) {
+    if (!str) return "";
+    return String(str).replace(/[&<>'"]/g, (tag) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "'": "&#39;",
+      '"': "&quot;"
+    })[tag] || tag);
+  }
+  function getActiveScene() {
+    return appProject.scenes.find((s) => String(s.id) === String(selectedSceneId)) || appProject.scenes[0];
+  }
+  function getActiveElement() {
+    const scene = getActiveScene();
+    if (!scene || !selectedElementId) return null;
+    return scene.elements.find((el) => String(el.id) === String(selectedElementId)) || null;
+  }
+  function updateStageScale() {
+    if (!canvasViewport || !canvasStageWrapper) return;
+    const vpWidth = canvasViewport.clientWidth;
+    const vpHeight = canvasViewport.clientHeight;
+    const stageW = appProject.canvas?.width || 1080;
+    const stageH = appProject.canvas?.height || 1920;
+    const rawScale = Math.min((vpWidth - 20) / stageW, (vpHeight - 20) / stageH);
+    const safeScale = Number.isFinite(rawScale) && rawScale > 0 ? rawScale : 0.22;
+    currentStageScale = Math.max(0.1, Math.min(1.5, safeScale));
+    canvasStageWrapper.style.width = `${stageW}px`;
+    canvasStageWrapper.style.height = `${stageH}px`;
+    canvasStageWrapper.style.transform = `translate(-50%, -50%) scale(${currentStageScale})`;
+    if (canvasOverlay) {
+      canvasOverlay.style.width = `${stageW}px`;
+      canvasOverlay.style.height = `${stageH}px`;
+    }
+    renderCanvasSelection();
+  }
+  window.addEventListener("resize", () => {
+    updateStageScale();
+    renderTimeline();
+  });
+  if (typeof ResizeObserver !== "undefined" && canvasViewport) {
+    const ro = new ResizeObserver(() => {
+      updateStageScale();
+    });
+    ro.observe(canvasViewport);
+  }
+  function renderSceneList() {
+    if (!sceneCardList) return;
+    sceneCardList.innerHTML = "";
+    if (sceneCountBadge) sceneCountBadge.textContent = appProject.scenes.length;
+    appProject.scenes.forEach((scene, index) => {
+      const isSelected = String(scene.id) === String(selectedSceneId);
+      const card = document.createElement("div");
+      card.className = `scene-card-item ${isSelected ? "active" : ""}`;
+      card.innerHTML = `
+      <div class="scene-card-header">
+        <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+          <span class="scene-pill">#${String(index + 1).padStart(2, "0")}</span>
+          <span class="scene-card-title">${escapeHTML2(scene.title || scene.name || "Adegan " + (index + 1))}</span>
+        </div>
+        <span class="scene-card-meta">${scene.duration}s</span>
+      </div>
+      <div style="font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+        ${escapeHTML2(scene.screenText || scene.narration || "Tidak ada teks layar")}
+      </div>
+      <div class="scene-card-actions" style="margin-top: 4px; justify-content: flex-end;">
+        <button type="button" class="btn-mini" data-action="up" title="Geser ke atas" ${index === 0 ? "disabled" : ""}>\u25B2</button>
+        <button type="button" class="btn-mini" data-action="down" title="Geser ke bawah" ${index === appProject.scenes.length - 1 ? "disabled" : ""}>\u25BC</button>
+        <button type="button" class="btn-mini" data-action="duplicate" title="Duplikasi adegan">\u29C9</button>
+        <button type="button" class="btn-mini danger" data-action="delete" title="Hapus adegan" ${appProject.scenes.length <= 1 ? "disabled" : ""}>\u2715</button>
+      </div>
+    `;
+      card.addEventListener("click", (e) => {
+        if (e.target.closest("button")) return;
+        selectScene(scene.id);
+      });
+      const btnUp = card.querySelector('[data-action="up"]');
+      const btnDown = card.querySelector('[data-action="down"]');
+      const btnDup = card.querySelector('[data-action="duplicate"]');
+      const btnDel = card.querySelector('[data-action="delete"]');
+      if (btnUp) btnUp.addEventListener("click", () => {
+        history.push(appProject);
+        reorderScenes(appProject, index, index - 1);
+        renderAll();
+        showToast("Urutan adegan dipindahkan.");
+      });
+      if (btnDown) btnDown.addEventListener("click", () => {
+        history.push(appProject);
+        reorderScenes(appProject, index, index + 1);
+        renderAll();
+        showToast("Urutan adegan dipindahkan.");
+      });
+      if (btnDup) btnDup.addEventListener("click", () => {
+        history.push(appProject);
+        const cloned = duplicateScene(appProject, scene.id);
+        if (cloned) {
+          selectScene(cloned.id);
+          renderAll();
+          showToast("Adegan berhasil diduplikasi.");
+        }
+      });
+      if (btnDel) btnDel.addEventListener("click", () => {
+        history.push(appProject);
+        const success = deleteScene(appProject, scene.id);
+        if (success) {
+          selectedSceneId = appProject.scenes[Math.max(0, index - 1)]?.id || appProject.scenes[0]?.id;
+          renderAll();
+          showToast("Adegan dihapus.");
+        }
+      });
+      sceneCardList.appendChild(card);
+    });
+  }
+  function selectScene(sceneId) {
+    selectedSceneId = sceneId;
+    selectedElementId = null;
+    const scene = getActiveScene();
+    if (scene) {
+      currentPlayheadTime = scene.startTime || 0;
+      sendToStage({ type: "MG_SEEK", time: currentPlayheadTime });
+    }
+    renderSceneList();
+    renderLayerTree();
+    syncInspector();
+    renderCanvasSelection();
+    renderTimeline();
+  }
+  btnAddScene.addEventListener("click", () => {
+    history.push(appProject);
+    const newScene = addScene(appProject);
+    selectScene(newScene.id);
+    renderAll();
+    showToast("Adegan baru ditambahkan.");
+  });
+  function renderLayerTree() {
+    if (!layerTreeList) return;
+    layerTreeList.innerHTML = "";
+    const scene = getActiveScene();
+    if (!scene) {
+      layerTreeList.innerHTML = `<div style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 20px;">Pilih adegan terlebih dahulu.</div>`;
+      return;
+    }
+    if (activeSceneLayerTitle) {
+      activeSceneLayerTitle.textContent = `Layer: ${scene.title || scene.name || "Adegan"}`;
+    }
+    if (layerCountBadge) {
+      layerCountBadge.textContent = (scene.elements || []).length;
+    }
+    const elements = [...scene.elements || []].sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+    elements.forEach((el, index) => {
+      const isSelected = String(el.id) === String(selectedElementId);
+      const item = document.createElement("div");
+      item.className = `layer-item ${isSelected ? "active" : ""} ${el.visible === false ? "hidden-layer" : ""}`;
+      item.innerHTML = `
+      <div class="layer-left">
+        <span class="layer-badge">${escapeHTML2(el.type)}</span>
+        <span class="layer-name" title="${escapeHTML2(el.name || el.type)}">${escapeHTML2(el.name || el.type)}</span>
+      </div>
+      <div class="layer-controls">
+        <button type="button" class="btn-layer-icon ${el.visible !== false ? "active" : ""}" data-action="toggle-visible" title="Tampilkan/Sembunyikan">
+          ${el.visible !== false ? "\u{1F441}\uFE0F" : "\u{1F6AB}"}
+        </button>
+        <button type="button" class="btn-layer-icon ${el.locked ? "active" : ""}" data-action="toggle-lock" title="Kunci Layer">
+          ${el.locked ? "\u{1F512}" : "\u{1F513}"}
+        </button>
+        <button type="button" class="btn-layer-icon" data-action="dup" title="Duplikasi">\u29C9</button>
+        <button type="button" class="btn-layer-icon" data-action="del" title="Hapus" style="color: var(--danger);">\u2715</button>
+      </div>
+    `;
+      item.addEventListener("click", (e) => {
+        if (e.target.closest("button")) return;
+        selectElement(el.id);
+      });
+      const btnVis = item.querySelector('[data-action="toggle-visible"]');
+      const btnLock = item.querySelector('[data-action="toggle-lock"]');
+      const btnDup = item.querySelector('[data-action="dup"]');
+      const btnDel = item.querySelector('[data-action="del"]');
+      if (btnVis) btnVis.addEventListener("click", () => {
+        history.push(appProject);
+        setElementVisibility(appProject, scene.id, el.id, el.visible === false);
+        renderAll();
+      });
+      if (btnLock) btnLock.addEventListener("click", () => {
+        history.push(appProject);
+        setElementLock(appProject, scene.id, el.id, !el.locked);
+        renderAll();
+      });
+      if (btnDup) btnDup.addEventListener("click", () => {
+        history.push(appProject);
+        const cloned = duplicateElement(appProject, scene.id, el.id);
+        if (cloned) {
+          selectElement(cloned.id);
+          renderAll();
+          showToast("Layer diduplikasi.");
+        }
+      });
+      if (btnDel) btnDel.addEventListener("click", () => {
+        history.push(appProject);
+        deleteElement(appProject, scene.id, el.id);
+        selectedElementId = null;
+        renderAll();
+        showToast("Layer dihapus.");
+      });
+      layerTreeList.appendChild(item);
+    });
+  }
+  function selectElement(elementId) {
+    selectedElementId = elementId;
+    renderLayerTree();
+    syncInspector();
+    renderCanvasSelection();
+    renderTimeline();
+  }
+  btnAddElement.addEventListener("click", () => {
+    const scene = getActiveScene();
+    if (!scene) return;
+    const type = selNewElementType ? selNewElementType.value : "text";
+    const elCount = (scene.elements || []).length + 1;
+    let newElementData = {
+      type,
+      name: `${type.toUpperCase()} ${elCount}`,
+      position: { x: 120, y: 300 + elCount * 40 % 600 },
+      size: { width: 400, height: 120 },
+      zIndex: elCount,
+      visible: true,
+      locked: false
+    };
+    if (type === "text") {
+      newElementData.content = "Teks Baru Layer";
+      newElementData.size = { width: 700, height: 140 };
+      newElementData.styling = {
+        fontSize: 64,
+        fontWeight: 800,
+        color: appProject.theme?.colors?.text || "#ffffff"
+      };
+      newElementData.animation = { type: "slide", delay: 0.1, duration: 0.5 };
+    } else if (type === "shape") {
+      newElementData.size = { width: 500, height: 250 };
+      newElementData.styling = {
+        backgroundColor: "rgba(0, 61, 165, 0.4)",
+        borderColor: appProject.theme?.colors?.accent || "#f0a500",
+        borderWidth: 2,
+        borderRadius: 16
+      };
+      newElementData.animation = { type: "fade", delay: 0.1, duration: 0.4 };
+    } else if (type === "logo") {
+      newElementData.size = { width: 160, height: 160 };
+      newElementData.animation = { type: "scale", delay: 0.1, duration: 0.6 };
+    } else if (type === "svg") {
+      newElementData.name = "Perisai Persib";
+      newElementData.size = { width: 240, height: 280 };
+      newElementData.props = { componentId: "svg_persib_shield" };
+      newElementData.assetId = "ast_persib_shield";
+      newElementData.animation = { type: "scale", delay: 0.1, duration: 0.5 };
+    } else if (type === "image") {
+      newElementData.name = "Logo Resmi Persib";
+      newElementData.assetUrl = "/public/logos/brand/logo.png";
+      newElementData.assetId = "ast_persib_logo";
+      newElementData.size = { width: 240, height: 240 };
+      newElementData.fitMode = "contain";
+      newElementData.animation = { type: "fade", delay: 0.1, duration: 0.5 };
+    } else if (type === "component") {
+      newElementData.name = "Milestone Data";
+      newElementData.content = "100%";
+      newElementData.size = { width: 600, height: 150 };
+      newElementData.props = { value: "100%", label: "Target Tercapai" };
+      newElementData.styling = {
+        backgroundColor: "rgba(10, 15, 26, 0.95)",
+        borderColor: "#f0a500",
+        borderWidth: 2,
+        borderRadius: 20
+      };
+    }
+    history.push(appProject);
+    const created = addElement(appProject, scene.id, newElementData);
+    if (created) {
+      selectElement(created.id);
+      renderAll();
+      showToast(`Layer ${type} berhasil ditambahkan.`);
+    }
+  });
+  function renderCanvasSelection() {
+    if (!canvasOverlay) return;
+    canvasOverlay.innerHTML = "";
+    const scene = getActiveScene();
+    const element = getActiveElement();
+    if (canvasActiveInfo) {
+      const sName = scene ? scene.title || scene.name || "Adegan" : "";
+      const eName = element ? ` \u2022 ${element.name || element.type}` : "";
+      canvasActiveInfo.textContent = `${sName}${eName}`;
+    }
+    if (!element || element.visible === false) return;
+    const w = parseFloat(element.size?.width) || 200;
+    const h = parseFloat(element.size?.height) || 100;
+    const x = element.position?.x || 0;
+    const y = element.position?.y || 0;
+    const box = document.createElement("div");
+    box.className = "canvas-selection-box";
+    box.style.left = `${x}px`;
+    box.style.top = `${y}px`;
+    box.style.width = `${w}px`;
+    box.style.height = `${h}px`;
+    const badge = document.createElement("div");
+    badge.className = "canvas-selection-badge";
+    const isMissing = element.assetId && !getAssetById(element.assetId) && !element.assetUrl;
+    const missingBadge = isMissing ? ' <span style="color:#ef4444;font-weight:bold;">\u26A0\uFE0F Hilang</span>' : "";
+    badge.innerHTML = `<span>${escapeHTML2(element.name || element.type)}</span> <span style="font-size: 12px; opacity: 0.85;">${Math.round(w)}\xD7${Math.round(h)}</span>${element.locked ? " \u{1F512}" : ""}${missingBadge}`;
+    box.appendChild(badge);
+    if (element.locked) {
+      box.style.cursor = "not-allowed";
+      box.style.borderColor = "#9ca3af";
+      badge.style.background = "#4b5563";
+      canvasOverlay.appendChild(box);
+      return;
+    }
+    const handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+    handles.forEach((handleType) => {
+      const handle = document.createElement("div");
+      handle.className = `canvas-resize-handle handle-${handleType}`;
+      handle.dataset.handle = handleType;
+      handle.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        initResize(e, handleType, element, box);
+      });
+      box.appendChild(handle);
+    });
+    box.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      initMove(e, element, box);
+    });
+    canvasOverlay.appendChild(box);
+  }
+  function initMove(e, element, box) {
+    e.preventDefault();
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
+    const startPosX = element.position.x;
+    const startPosY = element.position.y;
+    let hasMoved = false;
+    function onPointerMove(moveEvent) {
+      const dx = (moveEvent.clientX - startClientX) / currentStageScale;
+      const dy = (moveEvent.clientY - startClientY) / currentStageScale;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) hasMoved = true;
+      const newX = Math.round(startPosX + dx);
+      const newY = Math.round(startPosY + dy);
+      element.position.x = newX;
+      element.position.y = newY;
+      box.style.left = `${newX}px`;
+      box.style.top = `${newY}px`;
+      if (propElemX) propElemX.value = newX;
+      if (propElemY) propElemY.value = newY;
+    }
+    function onPointerUp() {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      if (hasMoved) {
+        history.push(appProject);
+        compileAndRender();
+        sendToStage({ type: "MG_SEEK", time: currentPlayheadTime });
+      }
+    }
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  }
+  function initResize(e, handleType, element, box) {
+    e.preventDefault();
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
+    const startX = element.position.x;
+    const startY = element.position.y;
+    const startW = parseFloat(element.size.width) || 200;
+    const startH = parseFloat(element.size.height) || 100;
+    let hasResized = false;
+    function onPointerMove(moveEvent) {
+      const dx = (moveEvent.clientX - startClientX) / currentStageScale;
+      const dy = (moveEvent.clientY - startClientY) / currentStageScale;
+      hasResized = true;
+      let newX = startX;
+      let newY = startY;
+      let newW = startW;
+      let newH = startH;
+      if (handleType.includes("e")) newW = Math.max(30, startW + dx);
+      if (handleType.includes("s")) newH = Math.max(20, startH + dy);
+      if (handleType.includes("w")) {
+        const allowedW = Math.max(30, startW - dx);
+        newX = startX + (startW - allowedW);
+        newW = allowedW;
+      }
+      if (handleType.includes("n")) {
+        const allowedH = Math.max(20, startH - dy);
+        newY = startY + (startH - allowedH);
+        newH = allowedH;
+      }
+      element.position.x = Math.round(newX);
+      element.position.y = Math.round(newY);
+      element.size.width = Math.round(newW);
+      element.size.height = Math.round(newH);
+      box.style.left = `${element.position.x}px`;
+      box.style.top = `${element.position.y}px`;
+      box.style.width = `${element.size.width}px`;
+      box.style.height = `${element.size.height}px`;
+      if (propElemX) propElemX.value = element.position.x;
+      if (propElemY) propElemY.value = element.position.y;
+      if (propElemW) propElemW.value = element.size.width;
+      if (propElemH) propElemH.value = element.size.height;
+    }
+    function onPointerUp() {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      if (hasResized) {
+        history.push(appProject);
+        compileAndRender();
+        sendToStage({ type: "MG_SEEK", time: currentPlayheadTime });
+      }
+    }
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  }
+  if (canvasViewport) {
+    canvasViewport.addEventListener("pointerdown", (e) => {
+      if (e.target === canvasViewport || e.target === canvasOverlay) {
+        selectedElementId = null;
+        renderLayerTree();
+        syncInspector();
+        renderCanvasSelection();
+        renderTimeline();
+      }
+    });
+  }
+  function syncInspector() {
+    const scene = getActiveScene();
+    const element = getActiveElement();
+    if (element) {
+      if (inspectorEmptyNotice) inspectorEmptyNotice.style.display = "none";
+      if (sceneInspector) sceneInspector.style.display = "none";
+      if (elementInspector) elementInspector.style.display = "flex";
+      if (elemInspectorTitle) elemInspectorTitle.textContent = element.name || "Elemen";
+      if (elemTypeBadge) elemTypeBadge.textContent = element.type.toUpperCase();
+      if (btnInspectorLock) btnInspectorLock.textContent = element.locked ? "\u{1F512}" : "\u{1F513}";
+      if (btnInspectorVisible) btnInspectorVisible.textContent = element.visible !== false ? "\u{1F441}\uFE0F" : "\u{1F6AB}";
+      if (propElemName) propElemName.value = element.name || "";
+      if (propElemX) propElemX.value = element.position?.x || 0;
+      if (propElemY) propElemY.value = element.position?.y || 0;
+      if (propElemW) propElemW.value = element.size?.width || "auto";
+      if (propElemH) propElemH.value = element.size?.height || "auto";
+      if (propElemRot) propElemRot.value = element.rotation || 0;
+      if (propElemOpacity) propElemOpacity.value = element.opacity !== void 0 ? element.opacity : 1;
+      if (inspectorTextGroup) {
+        inspectorTextGroup.style.display = element.type === "text" ? "flex" : "none";
+      }
+      if (propElemContent) propElemContent.value = element.content || "";
+      if (propElemHighlight) propElemHighlight.value = element.props?.highlightWord || "";
+      if (propElemFontSize) propElemFontSize.value = element.styling?.fontSize || 48;
+      if (propElemColor) propElemColor.value = element.styling?.color || "#ffffff";
+      const isAssetType = ["image", "svg", "logo", "component"].includes(element.type);
+      if (inspectorAssetGroup) {
+        inspectorAssetGroup.style.display = isAssetType ? "block" : "none";
+      }
+      if (propElemAssetId) {
+        propElemAssetId.value = element.assetId || element.props?.componentId || element.assetUrl || "";
+      }
+      if (propElemFitMode) {
+        propElemFitMode.value = element.fitMode || "contain";
+      }
+      if (propElemBgColor) propElemBgColor.value = element.styling?.backgroundColor || "";
+      if (propElemRadius) propElemRadius.value = element.styling?.borderRadius || 0;
+      if (propElemAnimType) propElemAnimType.value = element.animation?.type || "none";
+      if (propElemAnimDelay) propElemAnimDelay.value = element.animation?.delay || 0;
+      if (propElemAnimDur) propElemAnimDur.value = element.animation?.duration || 0.5;
+    } else if (scene) {
+      if (inspectorEmptyNotice) inspectorEmptyNotice.style.display = "none";
+      if (elementInspector) elementInspector.style.display = "none";
+      if (sceneInspector) sceneInspector.style.display = "flex";
+      if (propSceneTitle) propSceneTitle.value = scene.title || scene.name || "";
+      if (propSceneDuration) propSceneDuration.value = scene.duration || 5;
+      if (propSceneTransitionType) propSceneTransitionType.value = scene.transition?.type || "none";
+      if (propSceneTransitionDir) propSceneTransitionDir.value = scene.transition?.direction || "right";
+      if (propSceneNarration) propSceneNarration.value = scene.narration || "";
+      if (propSceneVisualAction) propSceneVisualAction.value = scene.visualAction || "";
+      syncVoiceoverInspector(scene);
+    } else {
+      if (inspectorEmptyNotice) inspectorEmptyNotice.style.display = "block";
+      if (elementInspector) elementInspector.style.display = "none";
+      if (sceneInspector) sceneInspector.style.display = "none";
+    }
+    const audio = appProject.audio || { enabled: false, bgmUrl: "", volume: 0.8, muted: false };
+    if (chkAudioEnabled) chkAudioEnabled.checked = Boolean(audio.enabled);
+    if (inpAudioUrl) inpAudioUrl.value = audio.bgmUrl || "";
+    if (rngAudioVolume) rngAudioVolume.value = audio.volume !== void 0 ? audio.volume : 0.8;
+    if (lblAudioVolume) lblAudioVolume.textContent = `${Math.round((audio.volume !== void 0 ? audio.volume : 0.8) * 100)}%`;
+    if (btnAudioMute) btnAudioMute.textContent = audio.muted ? "Unmute" : "Mute";
+  }
+  function bindInspectorEvents() {
+    if (propElemName) propElemName.addEventListener("input", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        el.name = e.target.value;
+        renderLayerTree();
+        renderCanvasSelection();
+        debouncedHistoryPush();
+      }
+    });
+    const bindPosSize = (input, field, subfield) => {
+      if (!input) return;
+      input.addEventListener("input", (e) => {
+        const el = getActiveElement();
+        if (!el) return;
+        if (subfield) {
+          el[field][subfield] = Number(e.target.value) || 0;
+        } else {
+          el[field] = isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value);
+        }
+        renderCanvasSelection();
+        debouncedHistoryPush();
+      });
+    };
+    bindPosSize(propElemX, "position", "x");
+    bindPosSize(propElemY, "position", "y");
+    bindPosSize(propElemW, "size", "width");
+    bindPosSize(propElemH, "size", "height");
+    if (propElemRot) propElemRot.addEventListener("input", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        el.rotation = Number(e.target.value) || 0;
+        debouncedHistoryPush();
+      }
+    });
+    if (propElemOpacity) propElemOpacity.addEventListener("input", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        el.opacity = Math.max(0, Math.min(1, Number(e.target.value)));
+        debouncedHistoryPush();
+      }
+    });
+    if (propElemContent) propElemContent.addEventListener("input", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        el.content = e.target.value;
+        debouncedHistoryPush();
+      }
+    });
+    if (propElemHighlight) propElemHighlight.addEventListener("input", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        if (!el.props) el.props = {};
+        el.props.highlightWord = e.target.value;
+        debouncedHistoryPush();
+      }
+    });
+    if (propElemFontSize) propElemFontSize.addEventListener("input", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        if (!el.styling) el.styling = {};
+        el.styling.fontSize = Number(e.target.value) || 24;
+        debouncedHistoryPush();
+      }
+    });
+    if (propElemColor) propElemColor.addEventListener("input", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        if (!el.styling) el.styling = {};
+        el.styling.color = e.target.value;
+        debouncedHistoryPush();
+      }
+    });
+    if (propElemBgColor) propElemBgColor.addEventListener("input", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        if (!el.styling) el.styling = {};
+        el.styling.backgroundColor = e.target.value;
+        debouncedHistoryPush();
+      }
+    });
+    if (propElemRadius) propElemRadius.addEventListener("input", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        if (!el.styling) el.styling = {};
+        el.styling.borderRadius = Number(e.target.value) || 0;
+        debouncedHistoryPush();
+      }
+    });
+    if (propElemAnimType) propElemAnimType.addEventListener("change", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        if (!el.animation) el.animation = {};
+        el.animation.type = e.target.value;
+        history.push(appProject);
+      }
+    });
+    if (propElemAnimDelay) propElemAnimDelay.addEventListener("input", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        if (!el.animation) el.animation = {};
+        el.animation.delay = Number(e.target.value) || 0;
+        debouncedHistoryPush();
+      }
+    });
+    if (propElemAnimDur) propElemAnimDur.addEventListener("input", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        if (!el.animation) el.animation = {};
+        el.animation.duration = Number(e.target.value) || 0.5;
+        debouncedHistoryPush();
+      }
+    });
+    if (propElemFitMode) propElemFitMode.addEventListener("change", (e) => {
+      const el = getActiveElement();
+      if (el) {
+        el.fitMode = e.target.value;
+        renderStagePreview();
+        history.push(appProject);
+      }
+    });
+    if (btnInspectChangeAsset) btnInspectChangeAsset.addEventListener("click", () => {
+      openAssetBrowserModal("replace");
+    });
+    if (btnInspectRemoveAsset) btnInspectRemoveAsset.addEventListener("click", () => {
+      const el = getActiveElement();
+      if (el) {
+        history.push(appProject);
+        el.assetId = "";
+        el.assetUrl = "";
+        if (el.props) delete el.props.componentId;
+        syncInspector();
+        renderCanvasSelection();
+        renderStagePreview();
+        showToast("Aset dilepas dari elemen.");
+      }
+    });
+    if (btnInspectorLock) btnInspectorLock.addEventListener("click", () => {
+      const el = getActiveElement();
+      const sc = getActiveScene();
+      if (el && sc) {
+        history.push(appProject);
+        setElementLock(appProject, sc.id, el.id, !el.locked);
+        renderAll();
+      }
+    });
+    if (btnInspectorVisible) btnInspectorVisible.addEventListener("click", () => {
+      const el = getActiveElement();
+      const sc = getActiveScene();
+      if (el && sc) {
+        history.push(appProject);
+        setElementVisibility(appProject, sc.id, el.id, el.visible === false);
+        renderAll();
+      }
+    });
+    if (btnInspectorDuplicate) btnInspectorDuplicate.addEventListener("click", () => {
+      const el = getActiveElement();
+      const sc = getActiveScene();
+      if (el && sc) {
+        history.push(appProject);
+        const cloned = duplicateElement(appProject, sc.id, el.id);
+        if (cloned) {
+          selectElement(cloned.id);
+          renderAll();
+        }
+      }
+    });
+    if (btnInspectorDelete) btnInspectorDelete.addEventListener("click", () => {
+      const el = getActiveElement();
+      const sc = getActiveScene();
+      if (el && sc) {
+        history.push(appProject);
+        deleteElement(appProject, sc.id, el.id);
+        selectedElementId = null;
+        renderAll();
+      }
+    });
+    if (propSceneTitle) propSceneTitle.addEventListener("input", (e) => {
+      const sc = getActiveScene();
+      if (sc) {
+        sc.title = e.target.value;
+        sc.name = e.target.value;
+        renderSceneList();
+        debouncedHistoryPush();
+      }
+    });
+    if (propSceneDuration) propSceneDuration.addEventListener("change", (e) => {
+      const sc = getActiveScene();
+      if (sc) {
+        history.push(appProject);
+        updateSceneProperties(appProject, sc.id, { duration: Number(e.target.value) });
+        renderAll();
+      }
+    });
+    if (propSceneTransitionType) propSceneTransitionType.addEventListener("change", (e) => {
+      const sc = getActiveScene();
+      if (sc) {
+        if (!sc.transition) sc.transition = { type: "slash", direction: "right", duration: 0.4 };
+        sc.transition.type = e.target.value;
+        history.push(appProject);
+      }
+    });
+    if (propSceneTransitionDir) propSceneTransitionDir.addEventListener("change", (e) => {
+      const sc = getActiveScene();
+      if (sc) {
+        if (!sc.transition) sc.transition = { type: "slash", direction: "right", duration: 0.4 };
+        sc.transition.direction = e.target.value;
+        history.push(appProject);
+      }
+    });
+    if (propSceneNarration) propSceneNarration.addEventListener("input", (e) => {
+      const sc = getActiveScene();
+      if (sc) {
+        sc.narration = e.target.value;
+        if (sc.voiceover && sc.voiceover.audioUrl) {
+          if (sc.voiceover.sourceText && sc.voiceover.sourceText.trim() !== sc.narration.trim()) {
+            sc.voiceover.status = "outdated";
+          } else {
+            sc.voiceover.status = "ready";
+          }
+          syncVoiceoverInspector(sc);
+        }
+        debouncedHistoryPush();
+      }
+    });
+    if (propSceneVisualAction) propSceneVisualAction.addEventListener("input", (e) => {
+      const sc = getActiveScene();
+      if (sc) {
+        sc.visualAction = e.target.value;
+        debouncedHistoryPush();
+      }
+    });
+    if (chkAudioEnabled) chkAudioEnabled.addEventListener("change", (e) => {
+      history.push(appProject);
+      updateAudioProperties(appProject, { enabled: e.target.checked });
+      compileAndRender();
+      renderTimeline();
+    });
+    if (selAudioPreset) selAudioPreset.addEventListener("change", (e) => {
+      if (e.target.value) {
+        history.push(appProject);
+        updateAudioProperties(appProject, { bgmUrl: e.target.value, enabled: true });
+        if (inpAudioUrl) inpAudioUrl.value = e.target.value;
+        if (chkAudioEnabled) chkAudioEnabled.checked = true;
+        compileAndRender();
+        renderTimeline();
+      }
+    });
+    if (inpAudioUrl) inpAudioUrl.addEventListener("change", (e) => {
+      history.push(appProject);
+      updateAudioProperties(appProject, { bgmUrl: e.target.value });
+      compileAndRender();
+      renderTimeline();
+    });
+    if (rngAudioVolume) rngAudioVolume.addEventListener("input", (e) => {
+      const vol = parseFloat(e.target.value);
+      updateAudioProperties(appProject, { volume: vol });
+      if (lblAudioVolume) lblAudioVolume.textContent = `${Math.round(vol * 100)}%`;
+      sendToStage({ type: "MG_SET_AUDIO_VOLUME", volume: vol });
+      debouncedHistoryPush();
+    });
+    if (btnAudioMute) btnAudioMute.addEventListener("click", () => {
+      const currentMute = appProject.audio?.muted || false;
+      history.push(appProject);
+      updateAudioProperties(appProject, { muted: !currentMute });
+      if (btnAudioMute) btnAudioMute.textContent = !currentMute ? "Unmute" : "Mute";
+      sendToStage({ type: "MG_SET_AUDIO_MUTED", muted: !currentMute });
+      renderTimeline();
+    });
+    bindVoiceoverEvents();
+    bindVoiceCloneEvents();
+  }
+  function renderTimeline() {
+    if (!tlRuler || !tlSceneBlocksContainer) return;
+    const totalDur = appProject.totalDuration || 30;
+    const fps = appProject.fps || 30;
+    const laneLabelWidth = 90;
+    const trackWidth = Math.max(1e3, totalDur * timelinePxPerSec + 120);
+    if (tlTracksInner) tlTracksInner.style.width = `${trackWidth}px`;
+    tlRuler.innerHTML = "";
+    for (let s = 0; s <= Math.ceil(totalDur); s++) {
+      const leftPx = laneLabelWidth + s * timelinePxPerSec;
+      if (s % 5 === 0 || s === 0) {
+        const label = document.createElement("div");
+        label.className = "timeline-tick-label";
+        label.style.left = `${leftPx}px`;
+        label.textContent = `${s}s`;
+        tlRuler.appendChild(label);
+      }
+    }
+    tlSceneBlocksContainer.innerHTML = "";
+    appProject.scenes.forEach((scene) => {
+      const isSelected = String(scene.id) === String(selectedSceneId);
+      const leftPx = (scene.startTime || 0) * timelinePxPerSec;
+      const widthPx = Math.max(30, (scene.duration || 5) * timelinePxPerSec - 2);
+      const block = document.createElement("div");
+      block.className = `timeline-scene-block ${isSelected ? "active" : ""}`;
+      block.style.left = `${leftPx}px`;
+      block.style.width = `${widthPx}px`;
+      block.textContent = `${scene.order}. ${scene.name || "Adegan"} (${scene.duration}s)`;
+      block.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectScene(scene.id);
+      });
+      tlSceneBlocksContainer.appendChild(block);
+    });
+    if (tlElementBlocksContainer) {
+      tlElementBlocksContainer.innerHTML = "";
+      const activeScene = getActiveScene();
+      if (activeScene && Array.isArray(activeScene.elements)) {
+        const sceneStartPx = (activeScene.startTime || 0) * timelinePxPerSec;
+        activeScene.elements.forEach((el) => {
+          const isSelected = String(el.id) === String(selectedElementId);
+          const animDelay = el.animation?.delay || 0;
+          const animDur = el.animation?.duration || 1;
+          const elLeftPx = sceneStartPx + animDelay * timelinePxPerSec;
+          const elWidthPx = Math.max(40, animDur * timelinePxPerSec);
+          const elBlock = document.createElement("div");
+          elBlock.className = `timeline-element-block ${isSelected ? "active" : ""}`;
+          elBlock.style.left = `${elLeftPx}px`;
+          elBlock.style.width = `${elWidthPx}px`;
+          elBlock.textContent = el.name || el.type;
+          elBlock.addEventListener("click", (e) => {
+            e.stopPropagation();
+            selectElement(el.id);
+          });
+          tlElementBlocksContainer.appendChild(elBlock);
+        });
+      }
+    }
+    if (tlAudioBlockContainer) {
+      tlAudioBlockContainer.innerHTML = "";
+      if (appProject.audio?.enabled) {
+        const audioBlock = document.createElement("div");
+        audioBlock.className = "timeline-audio-block";
+        audioBlock.style.left = "0px";
+        audioBlock.style.width = `${totalDur * timelinePxPerSec}px`;
+        audioBlock.innerHTML = `<span>\u{1F3B5} BGM: ${appProject.audio.muted ? "(Muted)" : "Active"} \u2022 Vol ${Math.round((appProject.audio.volume ?? 0.8) * 100)}%</span>`;
+        tlAudioBlockContainer.appendChild(audioBlock);
+      }
+    }
+    updatePlayheadUI(currentPlayheadTime);
+  }
+  function updatePlayheadUI(time) {
+    const laneLabelWidth = 90;
+    const leftPx = laneLabelWidth + time * timelinePxPerSec;
+    if (tlPlayheadLine) tlPlayheadLine.style.left = `${leftPx}px`;
+    const totalDur = appProject.totalDuration || 30;
+    const fps = appProject.fps || 30;
+    if (tlTimeDisplay) {
+      tlTimeDisplay.textContent = `${formatTimeWithFrames(time, fps)} / ${formatTimeWithFrames(totalDur, fps)}`;
+    }
+    if (tlFrameDisplay) {
+      const curFrame = Math.round(time * fps);
+      const totalFrames = Math.round(totalDur * fps);
+      tlFrameDisplay.textContent = `(Frame ${curFrame} / ${totalFrames} @ ${fps} FPS)`;
+    }
+    if (parentTimeScrubber) {
+      parentTimeScrubber.value = time;
+      parentTimeScrubber.max = totalDur;
+    }
+    if (parentTimeDisplay) {
+      parentTimeDisplay.textContent = `${formatTime2(time)} / ${formatTime2(totalDur)}`;
+    }
+  }
+  if (tlTracksScroll) {
+    let isScrubbing = false;
+    const seekFromClientX = (clientX) => {
+      const rect = tlTracksInner.getBoundingClientRect();
+      const laneLabelWidth = 90;
+      const xInTracks = clientX - rect.left - laneLabelWidth;
+      const newTime = Math.max(0, Math.min(appProject.totalDuration, xInTracks / timelinePxPerSec));
+      currentPlayheadTime = newTime;
+      updatePlayheadUI(newTime);
+      sendToStage({ type: "MG_SEEK", time: newTime });
+    };
+    tlTracksScroll.addEventListener("pointerdown", (e) => {
+      isScrubbing = true;
+      seekFromClientX(e.clientX);
+    });
+    window.addEventListener("pointermove", (e) => {
+      if (isScrubbing) {
+        seekFromClientX(e.clientX);
+      }
+    });
+    window.addEventListener("pointerup", () => {
+      isScrubbing = false;
+    });
+  }
+  if (tlZoomSlider) {
+    tlZoomSlider.addEventListener("input", (e) => {
+      timelinePxPerSec = parseInt(e.target.value, 10);
+      renderTimeline();
+    });
+  }
+  if (btnTlFit) {
+    btnTlFit.addEventListener("click", () => {
+      const scrollW = tlTracksScroll ? tlTracksScroll.clientWidth - 140 : 800;
+      const dur = appProject.totalDuration || 30;
+      timelinePxPerSec = Math.max(20, Math.min(100, Math.floor(scrollW / dur)));
+      if (tlZoomSlider) tlZoomSlider.value = timelinePxPerSec;
+      renderTimeline();
+    });
+  }
+  var btnToggleTimeline = document.getElementById("btnToggleTimeline");
+  var studioTimelineWorkspace = document.querySelector(".studio-timeline-workspace");
+  var studioLayout = document.querySelector(".studio-layout");
+  if (btnToggleTimeline && studioTimelineWorkspace) {
+    btnToggleTimeline.addEventListener("click", () => {
+      const isCollapsed = studioTimelineWorkspace.classList.toggle("collapsed");
+      if (studioLayout) studioLayout.classList.toggle("timeline-collapsed", isCollapsed);
+      btnToggleTimeline.textContent = isCollapsed ? "\u25B2" : "\u25BC";
+      btnToggleTimeline.title = isCollapsed ? "Bentangkan linimasa" : "Ciutkan linimasa";
+      setTimeout(() => {
+        updateStageScale();
+        renderTimeline();
+      }, 220);
+    });
+  }
+  function syncConceptToForm() {
+    if (formTopic) formTopic.value = appProject.videoTitle || appProject.name;
+    if (formCategory) formCategory.value = appProject.metadata?.category || "Hasil Pertandingan";
+    if (formAngle) formAngle.value = appProject.metadata?.angle || "";
+    if (formAudience) formAudience.value = appProject.metadata?.audience || "";
+    if (formGoal) formGoal.value = appProject.metadata?.goal || "";
+    if (formTone) formTone.value = appProject.metadata?.tone || "";
+    if (formDuration) formDuration.value = Math.round(appProject.totalDuration || 30);
+    if (formMetaphor) formMetaphor.value = appProject.metadata?.metaphor || "card";
+    const activePreset = appProject.metadata?.preset || "preset_b";
+    presetButtons.forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.presetVal === activePreset);
+    });
+    const colors = appProject.theme?.colors || {
+      primary: "#003da5",
+      secondary: "#0a0a0a",
+      text: "#ffffff",
+      accent: "#f0a500"
+    };
+    if (colorPrimary) colorPrimary.value = colors.primary;
+    if (colorSecondary) colorSecondary.value = colors.secondary;
+    if (colorText) colorText.value = colors.text;
+    if (colorAccent) colorAccent.value = colors.accent;
+    if (hexPrimary) hexPrimary.textContent = colors.primary;
+    if (hexSecondary) hexSecondary.textContent = colors.secondary;
+    if (hexText) hexText.textContent = colors.text;
+    if (hexAccent) hexAccent.textContent = colors.accent;
+  }
+  function bindConceptFormEvents() {
+    if (formTopic) formTopic.addEventListener("input", (e) => {
+      appProject.videoTitle = e.target.value;
+      appProject.name = e.target.value;
+      debouncedHistoryPush();
+    });
+    if (formCategory) formCategory.addEventListener("change", (e) => {
+      if (!appProject.metadata) appProject.metadata = {};
+      appProject.metadata.category = e.target.value;
+      history.push(appProject);
+      compileAndRender();
+    });
+    if (formAngle) formAngle.addEventListener("input", (e) => {
+      if (!appProject.metadata) appProject.metadata = {};
+      appProject.metadata.angle = e.target.value;
+      debouncedHistoryPush();
+    });
+    if (formAudience) formAudience.addEventListener("change", (e) => {
+      if (!appProject.metadata) appProject.metadata = {};
+      appProject.metadata.audience = e.target.value;
+      history.push(appProject);
+    });
+    if (formGoal) formGoal.addEventListener("change", (e) => {
+      if (!appProject.metadata) appProject.metadata = {};
+      appProject.metadata.goal = e.target.value;
+      history.push(appProject);
+    });
+    if (formTone) formTone.addEventListener("change", (e) => {
+      if (!appProject.metadata) appProject.metadata = {};
+      appProject.metadata.tone = e.target.value;
+      history.push(appProject);
+    });
+    if (formDuration) formDuration.addEventListener("change", (e) => {
+      const newDur = Math.max(5, parseInt(e.target.value, 10));
+      history.push(appProject);
+      scaleDuration(newDur);
+    });
+    if (formMetaphor) formMetaphor.addEventListener("change", (e) => {
+      if (!appProject.metadata) appProject.metadata = {};
+      appProject.metadata.metaphor = e.target.value;
+      history.push(appProject);
+      compileAndRender();
+    });
+    presetButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const presetVal = btn.dataset.presetVal;
+        history.push(appProject);
+        if (!appProject.metadata) appProject.metadata = {};
+        appProject.metadata.preset = presetVal;
+        if (presetVal === "preset_a") {
+          appProject.theme.colors = { primary: "#003da5", secondary: "#fef3c7", text: "#0f172a", accent: "#d97706" };
+          appProject.metadata.metaphor = "chart";
+        } else if (presetVal === "preset_c") {
+          appProject.theme.colors = { primary: "#003da5", secondary: "#090d16", text: "#ffffff", accent: "#f0a500" };
+          appProject.metadata.metaphor = "meter";
+        } else {
+          appProject.theme.colors = { primary: "#003da5", secondary: "#0a0a0a", text: "#ffffff", accent: "#f0a500" };
+          appProject.metadata.metaphor = "card";
+        }
+        syncConceptToForm();
+        compileAndRender();
+      });
+    });
+    const bindColor = (input, hex, key) => {
+      if (!input) return;
+      input.addEventListener("input", (e) => {
+        const val = e.target.value;
+        if (hex) hex.textContent = val;
+        if (!appProject.theme.colors) appProject.theme.colors = {};
+        appProject.theme.colors[key] = val;
+        debouncedHistoryPush();
+      });
+    };
+    bindColor(colorPrimary, hexPrimary, "primary");
+    bindColor(colorSecondary, hexSecondary, "secondary");
+    bindColor(colorText, hexText, "text");
+    bindColor(colorAccent, hexAccent, "accent");
+    if (btnResetFramework) {
+      btnResetFramework.addEventListener("click", () => {
+        if (PERSIB_TABS[activeTabId]) {
+          history.push(appProject);
+          tabProjectCache[activeTabId] = migrateLegacyTemplateToProject(PERSIB_TABS[activeTabId]);
+          appProject = tabProjectCache[activeTabId];
+          selectedSceneId = appProject.scenes[0]?.id || "sc_1";
+          selectedElementId = null;
+          renderAll();
+          showToast("Format direset ke bawaan!");
+        }
+      });
+    }
+  }
+  function scaleDuration(dur) {
+    const currentTotal = appProject.scenes.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
+    if (currentTotal > 0) {
+      appProject.scenes.forEach((s) => {
+        s.duration = Math.max(1, Math.round(s.duration / currentTotal * dur));
+      });
+    }
+    recalculateSceneTimings(appProject);
+    renderAll();
+  }
+  panelTabButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tabName = btn.dataset.panelTab;
+      panelTabButtons.forEach((b) => {
+        const isActive = b.dataset.panelTab === tabName;
+        b.classList.toggle("active", isActive);
+        b.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+      if (tabContentScenes) tabContentScenes.style.display = tabName === "scenes" ? "flex" : "none";
+      if (tabContentLayers) tabContentLayers.style.display = tabName === "layers" ? "flex" : "none";
+      if (tabContentConcept) tabContentConcept.style.display = tabName === "concept" ? "flex" : "none";
+    });
+  });
+  tabButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tabId = btn.dataset.tabId;
+      if (tabProjectCache[tabId]) {
+        tabProjectCache[activeTabId] = JSON.parse(JSON.stringify(appProject));
+        activeTabId = tabId;
+        tabButtons.forEach((b) => {
+          b.classList.toggle("active", b.dataset.tabId === tabId);
+        });
+        appProject = tabProjectCache[tabId];
+        selectedSceneId = appProject.scenes[0]?.id || "sc_1";
+        selectedElementId = null;
+        renderAll();
+        showToast(`Format "${PERSIB_TABS[tabId]?.name || tabId}" aktif!`);
+      }
+    });
+  });
+  function compileAndRender() {
+    if (btnGenerate) {
+      btnGenerate.disabled = true;
+      btnGenerate.textContent = "Mengompilasi...";
+    }
+    try {
+      const compiledHTML = generateMotionGraphicHTML(appProject);
+      stageIframe.srcdoc = compiledHTML;
+      showToast("Pratinjau visual berhasil diperbarui!");
+    } catch (err) {
+      console.error("Compilation error:", err);
+      showToast("Terjadi kesalahan saat kompilasi visual.");
+    } finally {
+      if (btnGenerate) {
+        setTimeout(() => {
+          btnGenerate.disabled = false;
+          btnGenerate.textContent = "Kompilasi Preview";
+        }, 350);
+      }
+    }
+  }
+  if (btnGenerate) btnGenerate.addEventListener("click", compileAndRender);
+  function renderAll() {
+    if (selectCanvasRatio) {
+      selectCanvasRatio.value = appProject.aspectRatio || "9:16";
+    }
+    syncConceptToForm();
+    renderSceneList();
+    renderLayerTree();
+    syncInspector();
+    updateStageScale();
+    renderTimeline();
+    compileAndRender();
+  }
   function sendToStage(message) {
     if (stageIframe && stageIframe.contentWindow) {
       try {
@@ -2310,8 +5489,11 @@ renderVideo();
   }
   if (parentTimeScrubber) {
     parentTimeScrubber.addEventListener("input", (e) => {
+      const seekTime = parseFloat(e.target.value);
+      currentPlayheadTime = seekTime;
       sendToStage({ type: "MG_PAUSE" });
-      sendToStage({ type: "MG_SEEK", time: parseFloat(e.target.value) });
+      sendToStage({ type: "MG_SEEK", time: seekTime });
+      updatePlayheadUI(seekTime);
     });
   }
   if (parentSpeedSelect) {
@@ -2324,75 +5506,1459 @@ renderVideo();
       sendToStage({ type: "MG_START_RECORD" });
     });
   }
-  function formatTime2(sec) {
-    const s = Math.max(0, Math.floor(sec));
-    const m = Math.floor(s / 60);
-    const rem = s % 60;
-    return String(m).padStart(2, "0") + ":" + String(rem).padStart(2, "0");
-  }
   window.addEventListener("message", (e) => {
     if (!e.data || e.data.type !== "MG_TIMELINE_UPDATE") return;
-    const { currentTime, duration, isPlaying } = e.data;
-    isStudioPlaying = isPlaying;
-    if (parentTimeScrubber) {
-      parentTimeScrubber.value = currentTime;
-      parentTimeScrubber.max = duration;
-    }
-    if (parentTimeDisplay) {
-      parentTimeDisplay.textContent = formatTime2(currentTime) + " / " + formatTime2(duration);
-    }
+    const { currentTime, duration, isPlaying: stagePlaying } = e.data;
+    isPlaying = stagePlaying;
+    currentPlayheadTime = currentTime;
+    updatePlayheadUI(currentTime);
     if (parentIconPlay) {
       parentIconPlay.textContent = isPlaying ? "\u275A\u275A Jeda" : "\u25B6 Putar";
     }
   });
-  btnDownloadHtml.addEventListener("click", () => {
-    downloadHTMLFile(appState);
-    showToast("File HTML 1080x1920 mandiri berhasil diunduh!");
-  });
-  btnExportPrompt.addEventListener("click", () => {
-    const promptText = generateStructuredPrompt(appState);
-    promptCodeArea.value = promptText;
-    promptModal.style.display = "flex";
-  });
-  btnCopyModalPrompt.addEventListener("click", () => {
-    navigator.clipboard.writeText(promptCodeArea.value).then(() => {
-      showToast("Prompt berhasil disalin ke clipboard!");
-      promptModal.style.display = "none";
-    });
-  });
-  btnCloseModal.addEventListener("click", () => {
-    promptModal.style.display = "none";
-  });
-  btnDownloadRenderPkg.addEventListener("click", () => {
-    downloadRenderPackage(appState);
-    showToast("Script render otomatis (render.js) berhasil diunduh!");
-  });
+  function performUndo() {
+    const previous = history.undo(appProject);
+    if (previous) {
+      appProject = previous;
+      tabProjectCache[activeTabId] = appProject;
+      selectedSceneId = appProject.scenes[0]?.id || "sc_1";
+      selectedElementId = null;
+      renderAll();
+      showToast("Undo berhasil.");
+    }
+  }
+  function performRedo() {
+    const next = history.redo(appProject);
+    if (next) {
+      appProject = next;
+      tabProjectCache[activeTabId] = appProject;
+      selectedSceneId = appProject.scenes[0]?.id || "sc_1";
+      selectedElementId = null;
+      renderAll();
+      showToast("Redo berhasil.");
+    }
+  }
+  if (btnUndo) btnUndo.addEventListener("click", performUndo);
+  if (btnRedo) btnRedo.addEventListener("click", performRedo);
   window.addEventListener("keydown", (e) => {
     const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
     const isInput = activeTag === "input" || activeTag === "textarea" || activeTag === "select";
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
       e.preventDefault();
-      compileAndRender();
-    } else if (e.key === "Escape") {
-      promptModal.style.display = "none";
+      performUndo();
+    } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "y" || e.shiftKey && e.key.toLowerCase() === "z")) {
+      e.preventDefault();
+      performRedo();
     } else if (e.code === "Space" && !isInput) {
       e.preventDefault();
       sendToStage({ type: "MG_TOGGLE_PLAY" });
+    } else if ((e.key === "Delete" || e.key === "Backspace") && !isInput && selectedElementId) {
+      const sc = getActiveScene();
+      if (sc) {
+        history.push(appProject);
+        deleteElement(appProject, sc.id, selectedElementId);
+        selectedElementId = null;
+        renderAll();
+        showToast("Element dihapus.");
+      }
     }
   });
-  function escapeHTML2(str) {
-    if (!str) return "";
-    return String(str).replace(/[&<>'"]/g, (tag) => {
-      return {
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        "'": "&#39;",
-        '"': "&quot;"
-      }[tag] || tag;
+  var currentAssetCategory = "All";
+  var assetSearchQuery = "";
+  var selectedModalAssetId = null;
+  var assetModalTargetMode = "add";
+  if (selectCanvasRatio) {
+    selectCanvasRatio.addEventListener("change", (e) => {
+      const val = e.target.value;
+      let width = 1080;
+      let height = 1920;
+      if (val === "16:9") {
+        width = 1920;
+        height = 1080;
+      } else if (val === "1:1") {
+        width = 1080;
+        height = 1080;
+      }
+      history.push(appProject);
+      appProject.canvas.width = width;
+      appProject.canvas.height = height;
+      appProject.aspectRatio = val;
+      updateStageScale();
+      renderStagePreview();
+      renderCanvasSelection();
+      showToast(`Rasio kanvas diubah ke ${val} (${width}\xD7${height})`);
+    });
+  }
+  function openAssetBrowserModal(mode = "add") {
+    assetModalTargetMode = mode;
+    selectedModalAssetId = null;
+    if (assetBrowserModal) assetBrowserModal.style.display = "flex";
+    renderAssetCategories();
+    renderAssetGallery();
+    updateModalSelectionUI();
+  }
+  function closeAssetBrowserModal() {
+    if (assetBrowserModal) assetBrowserModal.style.display = "none";
+  }
+  function renderAssetCategories() {
+    if (!assetCategoryChips) return;
+    assetCategoryChips.innerHTML = "";
+    ASSET_CATEGORIES.forEach((cat) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = `asset-chip ${currentAssetCategory.toLowerCase() === cat.toLowerCase() ? "active" : ""}`;
+      chip.textContent = cat;
+      chip.addEventListener("click", () => {
+        currentAssetCategory = cat;
+        renderAssetCategories();
+        renderAssetGallery();
+      });
+      assetCategoryChips.appendChild(chip);
+    });
+  }
+  function renderAssetGallery() {
+    if (!assetGalleryGrid) return;
+    assetGalleryGrid.innerHTML = "";
+    const assets = filterAssets(currentAssetCategory, assetSearchQuery);
+    if (assets.length === 0) {
+      assetGalleryGrid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted); font-size: 13px;">Tidak ada aset yang cocok dengan filter atau pencarian.</div>`;
+      return;
+    }
+    assets.forEach((asset) => {
+      const card = document.createElement("div");
+      card.className = `asset-card ${selectedModalAssetId === asset.id ? "selected" : ""}`;
+      card.dataset.assetId = asset.id;
+      let thumbHtml = "";
+      if (asset.fileType === "svg-component" && asset.componentId) {
+        thumbHtml = renderSvgComponent(asset.componentId, { width: 120, height: 90 });
+      } else if (asset.fileUrl) {
+        thumbHtml = `<img src="${asset.fileUrl}" alt="${escapeHTML2(asset.name)}" loading="lazy" />`;
+      } else {
+        thumbHtml = `<span style="font-size: 28px;">\u{1F4C1}</span>`;
+      }
+      const isCustom = asset.category === "Custom Upload" || asset.id.startsWith("ast_up_");
+      card.innerHTML = `
+      <div class="asset-card-thumb">${thumbHtml}</div>
+      <div class="asset-card-info">
+        <div class="asset-card-name" title="${escapeHTML2(asset.name)}">${escapeHTML2(asset.name)}</div>
+        <div class="asset-card-meta">
+          <span>${asset.fileType.toUpperCase()}</span>
+          <span>${asset.width}\xD7${asset.height}</span>
+        </div>
+      </div>
+      <div class="asset-card-actions">
+        <span class="asset-card-badge">${escapeHTML2(asset.category)}</span>
+        ${isCustom ? `<button type="button" class="asset-delete-btn" title="Hapus aset kustom" data-del-id="${asset.id}">\u{1F5D1}\uFE0F</button>` : ""}
+      </div>
+    `;
+      card.addEventListener("click", (e) => {
+        if (e.target.closest(".asset-delete-btn")) return;
+        selectedModalAssetId = asset.id;
+        document.querySelectorAll(".asset-card").forEach((c) => c.classList.remove("selected"));
+        card.classList.add("selected");
+        updateModalSelectionUI();
+      });
+      card.addEventListener("dblclick", () => {
+        selectedModalAssetId = asset.id;
+        applySelectedAssetToProject();
+      });
+      if (isCustom) {
+        const delBtn = card.querySelector(".asset-delete-btn");
+        if (delBtn) {
+          delBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            handleDeleteCustomAsset(asset.id);
+          });
+        }
+      }
+      assetGalleryGrid.appendChild(card);
+    });
+  }
+  function updateModalSelectionUI() {
+    const asset = getAssetById(selectedModalAssetId);
+    if (!asset) {
+      if (assetSelectedInfo) assetSelectedInfo.textContent = "Pilih salah satu aset untuk digunakan.";
+      if (btnApplySelectedAsset) btnApplySelectedAsset.disabled = true;
+      return;
+    }
+    if (assetSelectedInfo) {
+      assetSelectedInfo.innerHTML = `<strong>${escapeHTML2(asset.name)}</strong> (${asset.category}) \u2022 ${asset.width}\xD7${asset.height}px \u2022 ${asset.fileType.toUpperCase()}`;
+    }
+    if (btnApplySelectedAsset) {
+      btnApplySelectedAsset.disabled = false;
+      btnApplySelectedAsset.textContent = assetModalTargetMode === "replace" ? "Ganti Aset pada Elemen" : "Tambahkan ke Adegan";
+    }
+  }
+  function applySelectedAssetToProject() {
+    const asset = getAssetById(selectedModalAssetId);
+    if (!asset) return;
+    const scene = getActiveScene();
+    if (!scene) {
+      showToast("Pilih adegan terlebih dahulu.");
+      return;
+    }
+    if (assetModalTargetMode === "replace") {
+      const element = getActiveElement();
+      if (!element) {
+        showToast("Pilih elemen terlebih dahulu untuk diganti.");
+        return;
+      }
+      history.push(appProject);
+      element.assetId = asset.id;
+      if (asset.fileType === "svg-component") {
+        element.type = "svg";
+        if (!element.props) element.props = {};
+        element.props.componentId = asset.componentId;
+        element.assetUrl = "";
+      } else {
+        element.type = "image";
+        element.assetUrl = asset.fileUrl;
+        if (element.props) delete element.props.componentId;
+      }
+      element.size.width = asset.width || 300;
+      element.size.height = asset.height || 300;
+      renderCanvasSelection();
+      syncInspector();
+      renderStagePreview();
+      showToast(`Aset "${asset.name}" diterapkan pada elemen.`);
+    } else {
+      history.push(appProject);
+      const isSvg = asset.fileType === "svg-component";
+      const w = asset.width || 300;
+      const h = asset.height || 300;
+      const canvasW = appProject.canvas?.width || 1080;
+      const canvasH = appProject.canvas?.height || 1920;
+      const newEl = {
+        type: isSvg ? "svg" : "image",
+        name: asset.name,
+        assetId: asset.id,
+        assetUrl: isSvg ? "" : asset.fileUrl,
+        fitMode: "contain",
+        position: {
+          x: Math.round((canvasW - w) / 2),
+          y: Math.round((canvasH - h) / 2)
+        },
+        size: { width: w, height: h },
+        props: isSvg ? { componentId: asset.componentId } : {},
+        visible: true,
+        locked: false,
+        zIndex: (scene.elements || []).length + 1
+      };
+      const created = addElement(appProject, scene.id, newEl);
+      if (created) {
+        selectElement(created.id);
+        renderAll();
+        showToast(`Aset "${asset.name}" ditambahkan ke ${scene.title || scene.name}.`);
+      }
+    }
+    closeAssetBrowserModal();
+  }
+  function handleDeleteCustomAsset(assetId) {
+    const asset = getAssetById(assetId);
+    if (!asset) return;
+    const usage = checkAssetUsage(appProject, assetId);
+    if (usage.inUse) {
+      alert(`Tidak dapat menghapus aset!
+Aset ini masih digunakan pada ${usage.count} elemen di adegan: ${usage.scenes.join(", ")}.
+Hapus atau ganti elemen tersebut terlebih dahulu.`);
+      return;
+    }
+    if (!confirm(`Hapus aset "${asset.name}" secara permanen?`)) return;
+    deleteAsset(appProject, assetId, true);
+    fetch("/api/assets/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assetId })
+    }).catch(() => {
+    });
+    if (selectedModalAssetId === assetId) {
+      selectedModalAssetId = null;
+      updateModalSelectionUI();
+    }
+    renderAssetGallery();
+    showToast(`Aset "${asset.name}" berhasil dihapus.`);
+  }
+  async function uploadAssetFile(file) {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Ukuran file melebihi batas maksimal 5MB.");
+      return;
+    }
+    const validExts = [".png", ".jpg", ".jpeg", ".svg"];
+    const ext = "." + file.name.split(".").pop().toLowerCase();
+    if (!validExts.includes(ext)) {
+      alert(`Format file "${ext}" tidak didukung. Harap gunakan format PNG, JPG, atau SVG.`);
+      return;
+    }
+    if (uploadProgress) {
+      uploadProgress.style.display = "block";
+      uploadProgress.textContent = `Mengunggah ${file.name}...`;
+    }
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", "Custom Upload");
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: "Gagal mengunggah file." }));
+        throw new Error(errData.error || `Upload gagal (${res.status})`);
+      }
+      const data = await res.json();
+      if (data.success && data.asset) {
+        addUploadedAsset(data.asset);
+        selectedModalAssetId = data.asset.id;
+        currentAssetCategory = "Custom Upload";
+        renderAssetCategories();
+        renderAssetGallery();
+        updateModalSelectionUI();
+        showToast(`File "${file.name}" berhasil diunggah.`);
+      }
+    } catch (err) {
+      alert(`Gagal mengunggah file: ${err.message}`);
+    } finally {
+      if (uploadProgress) uploadProgress.style.display = "none";
+    }
+  }
+  if (btnOpenAssetLibrary) {
+    btnOpenAssetLibrary.addEventListener("click", () => openAssetBrowserModal("add"));
+  }
+  if (btnOpenAssetModalFromLayers) {
+    btnOpenAssetModalFromLayers.addEventListener("click", () => openAssetBrowserModal("add"));
+  }
+  if (btnCloseAssetModal) {
+    btnCloseAssetModal.addEventListener("click", closeAssetBrowserModal);
+  }
+  if (btnCancelAssetModal) {
+    btnCancelAssetModal.addEventListener("click", closeAssetBrowserModal);
+  }
+  if (btnApplySelectedAsset) {
+    btnApplySelectedAsset.addEventListener("click", applySelectedAssetToProject);
+  }
+  if (assetSearchInput) {
+    assetSearchInput.addEventListener("input", (e) => {
+      assetSearchQuery = e.target.value;
+      renderAssetGallery();
+    });
+  }
+  if (btnTriggerUpload && assetFileInput) {
+    btnTriggerUpload.addEventListener("click", () => assetFileInput.click());
+    assetFileInput.addEventListener("change", (e) => {
+      if (e.target.files && e.target.files[0]) {
+        uploadAssetFile(e.target.files[0]);
+        e.target.value = "";
+      }
+    });
+  }
+  if (assetDropzone) {
+    assetDropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      assetDropzone.classList.add("dragover");
+    });
+    assetDropzone.addEventListener("dragleave", () => {
+      assetDropzone.classList.remove("dragover");
+    });
+    assetDropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      assetDropzone.classList.remove("dragover");
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        uploadAssetFile(e.dataTransfer.files[0]);
+      }
+    });
+    assetDropzone.addEventListener("click", () => {
+      if (assetFileInput) assetFileInput.click();
+    });
+  }
+  if (typeof fetch === "function") {
+    fetch("/api/assets").then((r) => r.json()).then((assets) => {
+      if (Array.isArray(assets)) {
+        assets.forEach((a) => {
+          if (a.category === "Custom Upload" || a.id.startsWith("ast_up_")) {
+            try {
+              addUploadedAsset(a);
+            } catch (e) {
+            }
+          }
+        });
+      }
+    }).catch(() => {
+    });
+  }
+  var currentAudioCategory = "All";
+  var audioSearchQuery = "";
+  var previewAudioElement = null;
+  if (tabBtnVisualAssets && tabBtnAudioAssets) {
+    tabBtnVisualAssets.addEventListener("click", () => {
+      tabBtnVisualAssets.classList.add("active");
+      tabBtnAudioAssets.classList.remove("active");
+      if (visualAssetsView) visualAssetsView.style.display = "flex";
+      if (audioAssetsView) audioAssetsView.style.display = "none";
+    });
+    tabBtnAudioAssets.addEventListener("click", () => {
+      tabBtnAudioAssets.classList.add("active");
+      tabBtnVisualAssets.classList.remove("active");
+      if (visualAssetsView) visualAssetsView.style.display = "none";
+      if (audioAssetsView) audioAssetsView.style.display = "flex";
+      renderAudioCategories();
+      renderAudioList();
+    });
+  }
+  function renderAudioCategories() {
+    if (!audioCategoryChips) return;
+    audioCategoryChips.innerHTML = "";
+    AUDIO_CATEGORIES.forEach((cat) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = `asset-chip ${currentAudioCategory.toLowerCase() === cat.toLowerCase() ? "active" : ""}`;
+      chip.textContent = cat;
+      chip.addEventListener("click", () => {
+        currentAudioCategory = cat;
+        renderAudioCategories();
+        renderAudioList();
+      });
+      audioCategoryChips.appendChild(chip);
+    });
+  }
+  function renderAudioList() {
+    if (!audioListContainer) return;
+    audioListContainer.innerHTML = "";
+    const audioTracks = filterAudioAssets(currentAudioCategory, audioSearchQuery);
+    const activeBgmUrl = appProject.audio?.bgmUrl || "";
+    if (audioTracks.length === 0) {
+      audioListContainer.innerHTML = `<div style="text-align: center; padding: 30px; color: var(--text-muted); font-size: 13px;">Tidak ada trek audio yang cocok.</div>`;
+      return;
+    }
+    audioTracks.forEach((track) => {
+      const card = document.createElement("div");
+      const isCurrentBgm = activeBgmUrl === track.fileUrl || appProject.audio?.assetId === track.id;
+      card.className = `audio-card ${isCurrentBgm ? "active-bgm" : ""}`;
+      card.innerHTML = `
+      <div class="audio-card-left">
+        <button type="button" class="audio-play-btn" title="Dengarkan preview audio">\u25B6</button>
+        <div class="audio-meta">
+          <div class="audio-title">${escapeHTML2(track.name)} ${isCurrentBgm ? ' <span style="color:#22c55e;font-size:11px;">(Aktif)</span>' : ""}</div>
+          <div class="audio-sub">${escapeHTML2(track.category)} \u2022 ${track.duration || 30}s \u2022 ${track.fileType.toUpperCase()}</div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button type="button" class="btn btn-secondary btn-mini btn-select-bgm" data-track-id="${track.id}">Pilih BGM</button>
+      </div>
+    `;
+      const playBtn = card.querySelector(".audio-play-btn");
+      playBtn.addEventListener("click", () => {
+        if (previewAudioElement && previewAudioElement.src.includes(track.fileUrl)) {
+          if (!previewAudioElement.paused) {
+            previewAudioElement.pause();
+            playBtn.textContent = "\u25B6";
+            return;
+          }
+        }
+        if (previewAudioElement) {
+          previewAudioElement.pause();
+          document.querySelectorAll(".audio-play-btn").forEach((b) => b.textContent = "\u25B6");
+        }
+        previewAudioElement = new Audio(track.fileUrl);
+        previewAudioElement.volume = track.volume || 0.8;
+        previewAudioElement.play().then(() => {
+          playBtn.textContent = "\u23F8";
+        }).catch(() => {
+          playBtn.textContent = "\u25B6";
+        });
+        previewAudioElement.onended = () => {
+          playBtn.textContent = "\u25B6";
+        };
+      });
+      const selectBtn = card.querySelector(".btn-select-bgm");
+      selectBtn.addEventListener("click", () => {
+        history.push(appProject);
+        if (!appProject.audio) appProject.audio = { enabled: true };
+        appProject.audio.enabled = true;
+        appProject.audio.assetId = track.id;
+        appProject.audio.bgmUrl = track.fileUrl;
+        appProject.audio.volume = track.volume || 0.85;
+        syncInspector();
+        renderAudioList();
+        compileAndRender();
+        showToast(`Audio "${track.name}" dipilih sebagai musik latar proyek.`);
+      });
+      audioListContainer.appendChild(card);
+    });
+  }
+  if (audioSearchInput) {
+    audioSearchInput.addEventListener("input", (e) => {
+      audioSearchQuery = e.target.value;
+      renderAudioList();
+    });
+  }
+  if (btnTriggerAudioUpload && audioFileInput) {
+    btnTriggerAudioUpload.addEventListener("click", () => audioFileInput.click());
+    audioFileInput.addEventListener("change", (e) => {
+      if (e.target.files && e.target.files[0]) {
+        uploadAudioFile(e.target.files[0]);
+        e.target.value = "";
+      }
+    });
+  }
+  if (audioDropzone) {
+    audioDropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      audioDropzone.classList.add("dragover");
+    });
+    audioDropzone.addEventListener("dragleave", () => {
+      audioDropzone.classList.remove("dragover");
+    });
+    audioDropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      audioDropzone.classList.remove("dragover");
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        uploadAudioFile(e.dataTransfer.files[0]);
+      }
+    });
+    audioDropzone.addEventListener("click", () => {
+      if (audioFileInput) audioFileInput.click();
+    });
+  }
+  async function uploadAudioFile(file) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Ukuran audio melebihi batas 10MB.");
+      return;
+    }
+    const ext = "." + file.name.split(".").pop().toLowerCase();
+    if (![".mp3", ".wav"].includes(ext)) {
+      alert("Format audio tidak didukung. Harap unggah berkas MP3 atau WAV.");
+      return;
+    }
+    if (audioUploadProgress) {
+      audioUploadProgress.style.display = "block";
+      audioUploadProgress.textContent = `Mengunggah audio ${file.name}...`;
+    }
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", "Background Music");
+      const res = await fetch("/api/upload-audio", {
+        method: "POST",
+        body: formData
+      });
+      if (!res.ok) {
+        throw new Error(`Upload gagal (${res.status})`);
+      }
+      const data = await res.json();
+      if (data.success && data.audio) {
+        addUploadedAudio(data.audio);
+        renderAudioList();
+        showToast(`Audio "${file.name}" berhasil diunggah.`);
+      }
+    } catch (err) {
+      alert(`Gagal upload audio: ${err.message}`);
+    } finally {
+      if (audioUploadProgress) audioUploadProgress.style.display = "none";
+    }
+  }
+  if (typeof fetch === "function") {
+    fetch("/api/audio").then((r) => r.json()).then((tracks) => {
+      if (Array.isArray(tracks)) {
+        tracks.forEach((t) => {
+          if (t.id.startsWith("aud_up_")) {
+            try {
+              addUploadedAudio(t);
+            } catch (e) {
+            }
+          }
+        });
+      }
+    }).catch(() => {
+    });
+  }
+  var availableTtsProviders = [];
+  async function loadTtsProviders() {
+    if (typeof fetch !== "function") return;
+    try {
+      const res = await fetch("/api/tts/providers");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.providers)) {
+          availableTtsProviders = data.providers;
+          updateTtsVoiceOptions();
+        }
+      }
+    } catch (err) {
+      console.error("Gagal memuat provider TTS:", err.message);
+    }
+  }
+  function updateTtsVoiceOptions() {
+    if (!selVoProvider || !selVoVoice) return;
+    const currentProviderId = selVoProvider.value || "google";
+    const currentLang = selVoLanguage ? selVoLanguage.value : "id-ID";
+    const provider = availableTtsProviders.find((p) => p.id === currentProviderId);
+    if (btnOpenCloneModal) {
+      btnOpenCloneModal.style.display = provider?.supportsCustomVoices ? "inline-flex" : "none";
+    }
+    if (voProviderNotice) {
+      if (provider && !provider.configured) {
+        voProviderNotice.textContent = `\u26A0\uFE0F ${provider.name} belum dikonfigurasi API Key di .env.`;
+      } else {
+        const extraNotice = provider?.supportsCustomVoices ? " (Mendukung Voice Cloning)" : "";
+        voProviderNotice.textContent = `\u2713 ${provider ? provider.name : "Provider"} aktif.${extraNotice}`;
+      }
+    }
+    if (lblVoParamSecond) {
+      if (currentProviderId === "elevenlabs") {
+        lblVoParamSecond.innerHTML = `Stabilitas (<span id="valVoPitch">${rangeVoPitch ? rangeVoPitch.value : "0.75"}</span>)`;
+        if (rangeVoPitch) {
+          rangeVoPitch.min = "0.1";
+          rangeVoPitch.max = "1.0";
+          rangeVoPitch.step = "0.05";
+        }
+      } else {
+        lblVoParamSecond.innerHTML = `Pitch (<span id="valVoPitch">${rangeVoPitch ? rangeVoPitch.value : "0.0"}</span>)`;
+        if (rangeVoPitch) {
+          rangeVoPitch.min = "-5.0";
+          rangeVoPitch.max = "5.0";
+          rangeVoPitch.step = "0.5";
+        }
+      }
+    }
+    const prevVoiceVal = selVoVoice.value;
+    selVoVoice.innerHTML = "";
+    const voices = provider?.voices || [];
+    const filtered = voices.filter((v) => !currentLang || v.language && v.language.toLowerCase().startsWith(currentLang.toLowerCase().split("-")[0]));
+    const listToRender = filtered.length > 0 ? filtered : voices;
+    const customVoices = listToRender.filter((v) => Boolean(v.isCustom));
+    const presetVoices = listToRender.filter((v) => !v.isCustom);
+    if (customVoices.length > 0) {
+      const optGroupCustom = document.createElement("optgroup");
+      optGroupCustom.label = "\u2B50 Suara Kustom (Voice Cloning)";
+      customVoices.forEach((v) => {
+        const opt = document.createElement("option");
+        opt.value = v.id;
+        opt.textContent = `\u{1F464} ${v.name}`;
+        optGroupCustom.appendChild(opt);
+      });
+      selVoVoice.appendChild(optGroupCustom);
+      const optGroupPreset = document.createElement("optgroup");
+      optGroupPreset.label = "\u{1F399}\uFE0F Suara Bawaan (Preset)";
+      presetVoices.forEach((v) => {
+        const opt = document.createElement("option");
+        opt.value = v.id;
+        opt.textContent = v.name;
+        optGroupPreset.appendChild(opt);
+      });
+      selVoVoice.appendChild(optGroupPreset);
+    } else {
+      presetVoices.forEach((v) => {
+        const opt = document.createElement("option");
+        opt.value = v.id;
+        opt.textContent = v.name;
+        selVoVoice.appendChild(opt);
+      });
+    }
+    if (prevVoiceVal && listToRender.some((v) => v.id === prevVoiceVal)) {
+      selVoVoice.value = prevVoiceVal;
+    }
+  }
+  function syncVoiceoverInspector(scene) {
+    if (!scene || !sceneVoiceoverControlBox) return;
+    const vo = scene.voiceover || {
+      enabled: true,
+      provider: "google",
+      voiceId: "id-ID-Standard-A",
+      language: "id-ID",
+      parameters: { speakingRate: 1, pitch: 0, stability: 0.75 },
+      status: "idle"
+    };
+    if (chkVoEnabled) chkVoEnabled.checked = vo.enabled !== false;
+    if (voConfigControls) voConfigControls.style.opacity = vo.enabled !== false ? "1" : "0.45";
+    if (selVoProvider) selVoProvider.value = vo.provider || "google";
+    if (selVoLanguage) selVoLanguage.value = vo.language || "id-ID";
+    updateTtsVoiceOptions();
+    if (selVoVoice && vo.voiceId) {
+      selVoVoice.value = vo.voiceId;
+    }
+    const speed = vo.parameters?.speakingRate !== void 0 ? vo.parameters.speakingRate : 1;
+    if (rangeVoSpeed) rangeVoSpeed.value = speed;
+    if (valVoSpeed) valVoSpeed.textContent = `${Number(speed).toFixed(2)}x`;
+    const secondVal = vo.provider === "elevenlabs" ? vo.parameters?.stability !== void 0 ? vo.parameters.stability : 0.75 : vo.parameters?.pitch !== void 0 ? vo.parameters.pitch : 0;
+    if (rangeVoPitch) rangeVoPitch.value = secondVal;
+    if (valVoPitch) valVoPitch.textContent = vo.provider === "elevenlabs" ? Number(secondVal).toFixed(2) : Number(secondVal) > 0 ? `+${secondVal}` : `${secondVal}`;
+    if (voStatusBadge) {
+      if (vo.audioUrl && vo.sourceText && scene.narration && vo.sourceText.trim() !== scene.narration.trim()) {
+        vo.status = "outdated";
+      }
+      if (vo.status === "ready") {
+        voStatusBadge.className = "badge-vo-ready";
+        voStatusBadge.textContent = "\u2713 Tersedia";
+      } else if (vo.status === "outdated") {
+        voStatusBadge.className = "badge-vo-outdated";
+        voStatusBadge.textContent = "\u26A0\uFE0F Teks Berubah";
+      } else if (vo.status === "generating") {
+        voStatusBadge.className = "badge-vo-generating";
+        voStatusBadge.textContent = "Memproses...";
+      } else if (vo.status === "error") {
+        voStatusBadge.className = "badge-vo-error";
+        voStatusBadge.textContent = "Gagal";
+      } else {
+        voStatusBadge.className = "badge-vo-idle";
+        voStatusBadge.textContent = "Belum Dibuat";
+      }
+    }
+    if (voAudioPlayerContainer && voPreviewAudioElement) {
+      if (vo.audioUrl && (vo.status === "ready" || vo.status === "outdated")) {
+        voAudioPlayerContainer.style.display = "block";
+        voPreviewAudioElement.src = vo.audioUrl;
+        if (voAudioMetaDuration) {
+          voAudioMetaDuration.textContent = `Durasi: ${vo.duration ? Number(vo.duration).toFixed(1) + "s" : "-"}`;
+        }
+      } else {
+        voAudioPlayerContainer.style.display = "none";
+        voPreviewAudioElement.removeAttribute("src");
+      }
+    }
+  }
+  function bindVoiceoverEvents() {
+    if (chkVoEnabled) {
+      chkVoEnabled.addEventListener("change", (e) => {
+        const scene = getActiveScene();
+        if (!scene) return;
+        if (!scene.voiceover) {
+          scene.voiceover = {
+            enabled: e.target.checked,
+            provider: selVoProvider ? selVoProvider.value : "google",
+            voiceId: selVoVoice ? selVoVoice.value : "id-ID-Standard-A",
+            language: selVoLanguage ? selVoLanguage.value : "id-ID",
+            parameters: { speakingRate: 1, pitch: 0, stability: 0.75 },
+            status: "idle"
+          };
+        } else {
+          scene.voiceover.enabled = e.target.checked;
+        }
+        if (voConfigControls) voConfigControls.style.opacity = e.target.checked ? "1" : "0.45";
+        compileAndRender();
+        debouncedHistoryPush();
+      });
+    }
+    if (selVoProvider) {
+      selVoProvider.addEventListener("change", (e) => {
+        const scene = getActiveScene();
+        updateTtsVoiceOptions();
+        if (scene) {
+          if (!scene.voiceover) scene.voiceover = { enabled: true };
+          scene.voiceover.provider = e.target.value;
+          if (selVoVoice) scene.voiceover.voiceId = selVoVoice.value;
+          debouncedHistoryPush();
+        }
+      });
+    }
+    if (selVoLanguage) {
+      selVoLanguage.addEventListener("change", (e) => {
+        const scene = getActiveScene();
+        updateTtsVoiceOptions();
+        if (scene) {
+          if (!scene.voiceover) scene.voiceover = { enabled: true };
+          scene.voiceover.language = e.target.value;
+          if (selVoVoice) scene.voiceover.voiceId = selVoVoice.value;
+          debouncedHistoryPush();
+        }
+      });
+    }
+    if (selVoVoice) {
+      selVoVoice.addEventListener("change", (e) => {
+        const scene = getActiveScene();
+        if (scene) {
+          if (!scene.voiceover) scene.voiceover = { enabled: true };
+          scene.voiceover.voiceId = e.target.value;
+          debouncedHistoryPush();
+        }
+      });
+    }
+    if (rangeVoSpeed) {
+      rangeVoSpeed.addEventListener("input", (e) => {
+        const val = parseFloat(e.target.value);
+        if (valVoSpeed) valVoSpeed.textContent = `${val.toFixed(2)}x`;
+        const scene = getActiveScene();
+        if (scene) {
+          if (!scene.voiceover) scene.voiceover = { enabled: true };
+          if (!scene.voiceover.parameters) scene.voiceover.parameters = {};
+          scene.voiceover.parameters.speakingRate = val;
+          debouncedHistoryPush();
+        }
+      });
+    }
+    if (rangeVoPitch) {
+      rangeVoPitch.addEventListener("input", (e) => {
+        const val = parseFloat(e.target.value);
+        const isEleven = selVoProvider && selVoProvider.value === "elevenlabs";
+        if (valVoPitch) valVoPitch.textContent = isEleven ? val.toFixed(2) : val > 0 ? `+${val}` : `${val}`;
+        const scene = getActiveScene();
+        if (scene) {
+          if (!scene.voiceover) scene.voiceover = { enabled: true };
+          if (!scene.voiceover.parameters) scene.voiceover.parameters = {};
+          if (isEleven) {
+            scene.voiceover.parameters.stability = val;
+          } else {
+            scene.voiceover.parameters.pitch = val;
+          }
+          debouncedHistoryPush();
+        }
+      });
+    }
+    if (btnPreviewVoSpeech) {
+      btnPreviewVoSpeech.addEventListener("click", async () => {
+        const scene = getActiveScene();
+        const textToSpeak = scene && scene.narration && scene.narration.trim() ? scene.narration.trim() : "Halo Bobotoh, selamat datang di Persib Motion Studio!";
+        const providerId = selVoProvider ? selVoProvider.value : "google";
+        const voiceId = selVoVoice ? selVoVoice.value : "";
+        const language = selVoLanguage ? selVoLanguage.value : "id-ID";
+        const speakingRate = rangeVoSpeed ? parseFloat(rangeVoSpeed.value) : 1;
+        const secondVal = rangeVoPitch ? parseFloat(rangeVoPitch.value) : 0;
+        const parameters = { speakingRate };
+        if (providerId === "elevenlabs") {
+          parameters.stability = secondVal;
+        } else {
+          parameters.pitch = secondVal;
+        }
+        btnPreviewVoSpeech.disabled = true;
+        btnPreviewVoSpeech.textContent = "\u{1F50A} Memuat...";
+        try {
+          const res = await fetch("/api/tts/preview", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: textToSpeak,
+              providerId,
+              voiceId,
+              language,
+              parameters,
+              forceMock: false
+            })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || "Gagal memutar sampel suara.");
+          }
+          if (voPreviewAudioElement) {
+            voPreviewAudioElement.src = data.preview.audioUrl;
+            if (voAudioPlayerContainer) voAudioPlayerContainer.style.display = "block";
+            voPreviewAudioElement.play().catch(() => {
+            });
+          }
+        } catch (err) {
+          alert(err.message);
+        } finally {
+          btnPreviewVoSpeech.disabled = false;
+          btnPreviewVoSpeech.textContent = "\u{1F50A} Tes Suara";
+        }
+      });
+    }
+    if (btnGenerateVoAudio) {
+      btnGenerateVoAudio.addEventListener("click", async () => {
+        const scene = getActiveScene();
+        if (!scene) return;
+        const narrationText = scene.narration || (propSceneNarration ? propSceneNarration.value : "");
+        if (!narrationText || !narrationText.trim()) {
+          alert("Harap isi teks naskah narasi terlebih dahulu.");
+          if (propSceneNarration) propSceneNarration.focus();
+          return;
+        }
+        const providerId = selVoProvider ? selVoProvider.value : "google";
+        const voiceId = selVoVoice ? selVoVoice.value : "";
+        const language = selVoLanguage ? selVoLanguage.value : "id-ID";
+        const speakingRate = rangeVoSpeed ? parseFloat(rangeVoSpeed.value) : 1;
+        const secondVal = rangeVoPitch ? parseFloat(rangeVoPitch.value) : 0;
+        const parameters = { speakingRate };
+        if (providerId === "elevenlabs") {
+          parameters.stability = secondVal;
+        } else {
+          parameters.pitch = secondVal;
+        }
+        btnGenerateVoAudio.disabled = true;
+        if (voGenerateProgress) voGenerateProgress.style.display = "block";
+        if (voStatusBadge) {
+          voStatusBadge.className = "badge-vo-generating";
+          voStatusBadge.textContent = "Memproses...";
+        }
+        try {
+          const oldAudioUrl = scene.voiceover?.audioUrl || null;
+          const sceneIdx = appProject.scenes.findIndex((s) => String(s.id) === String(scene.id)) + 1;
+          const res = await fetch("/api/tts/synthesize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sceneId: scene.id,
+              sceneIndex: sceneIdx,
+              text: narrationText.trim(),
+              providerId,
+              voiceId,
+              language,
+              parameters,
+              oldAudioUrl,
+              forceMock: false
+            })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || "Gagal membuat audio voiceover.");
+          }
+          history.push(appProject);
+          scene.voiceover = data.voiceover;
+          if (scene.captions) {
+            scene.captions.status = "outdated";
+            showToast(`Voiceover diperbarui! Timing subtitle ditandai perlu disinkronkan ulang.`);
+          } else {
+            showToast(`Voiceover untuk "${scene.name || "Adegan"}" berhasil dibuat!`);
+          }
+          syncVoiceoverInspector(scene);
+          compileAndRender();
+          renderTimeline();
+        } catch (err) {
+          if (voStatusBadge) {
+            voStatusBadge.className = "badge-vo-error";
+            voStatusBadge.textContent = "Gagal";
+          }
+          alert(`Gagal membuat voiceover: ${err.message}`);
+        } finally {
+          btnGenerateVoAudio.disabled = false;
+          if (voGenerateProgress) voGenerateProgress.style.display = "none";
+        }
+      });
+    }
+    if (btnDeleteVoAudio) {
+      btnDeleteVoAudio.addEventListener("click", () => {
+        const scene = getActiveScene();
+        if (!scene || !scene.voiceover) return;
+        if (!confirm("Hapus voiceover untuk adegan ini?")) return;
+        history.push(appProject);
+        scene.voiceover.audioUrl = "";
+        scene.voiceover.assetId = "";
+        scene.voiceover.status = "idle";
+        scene.voiceover.sourceText = "";
+        syncVoiceoverInspector(scene);
+        compileAndRender();
+        renderTimeline();
+        showToast("Voiceover berhasil dihapus.");
+      });
+    }
+  }
+  function openVoiceCloneModal() {
+    if (voiceCloneModal) voiceCloneModal.style.display = "flex";
+    loadCustomVoiceList();
+  }
+  function closeVoiceCloneModal() {
+    if (voiceCloneModal) voiceCloneModal.style.display = "none";
+    if (inpCloneVoiceName) inpCloneVoiceName.value = "";
+    if (inpCloneVoiceDesc) inpCloneVoiceDesc.value = "";
+    if (inpCloneSpeakerName) inpCloneSpeakerName.value = "";
+    if (chkCloneConsent) chkCloneConsent.checked = false;
+    if (lblCloneAudioFile) lblCloneAudioFile.textContent = "Klik atau seret file rekaman sampel suara ke sini";
+    if (fileCloneAudioSample) fileCloneAudioSample.value = "";
+    cloneAudioSampleBase64 = null;
+    if (cloneProgressNotice) cloneProgressNotice.style.display = "none";
+  }
+  async function loadCustomVoiceList() {
+    if (!customVoiceListContainer) return;
+    customVoiceListContainer.innerHTML = '<div style="font-size: 11px; color: var(--text-dim); text-align: center;">Memuat daftar custom voice...</div>';
+    try {
+      const res = await fetch("/api/tts/custom-voices?provider=elevenlabs");
+      const data = await res.json();
+      const voices = data.voices || [];
+      if (voices.length === 0) {
+        customVoiceListContainer.innerHTML = '<div style="font-size: 11px; color: var(--text-dim); padding: 6px 0;">Belum ada custom voice tersimpan.</div>';
+        return;
+      }
+      customVoiceListContainer.innerHTML = "";
+      voices.forEach((v) => {
+        const item = document.createElement("div");
+        item.className = "custom-voice-item";
+        item.innerHTML = `
+        <div class="custom-voice-info">
+          <div class="custom-voice-title">${v.name}</div>
+          <div class="custom-voice-meta">
+            <span class="badge-custom-voice">CLONED</span>
+            <span>\u{1F464} ${v.speakerName || "Pemilik Sah"}</span>
+            <span>\u2022 ${v.createdAt ? new Date(v.createdAt).toLocaleDateString("id-ID") : "-"}</span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 4px;">
+          <button type="button" class="btn btn-secondary btn-mini btn-test-clone-voice" data-voice-id="${v.id}" title="Tes suara kustom">
+            \u{1F50A} Tes
+          </button>
+          <button type="button" class="btn btn-secondary btn-mini danger btn-del-clone-voice" data-voice-id="${v.id}" title="Hapus referensi custom voice">
+            \u{1F5D1}\uFE0F
+          </button>
+        </div>
+      `;
+        customVoiceListContainer.appendChild(item);
+      });
+      customVoiceListContainer.querySelectorAll(".btn-test-clone-voice").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const voiceId = btn.getAttribute("data-voice-id");
+          btn.disabled = true;
+          btn.textContent = "\u23F3";
+          try {
+            const prevRes = await fetch("/api/tts/preview", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: "Halo Bobotoh, ini adalah pratinjau karakter suara kustom saya!",
+                providerId: "elevenlabs",
+                voiceId,
+                forceMock: false
+              })
+            });
+            const prevData = await prevRes.json();
+            if (prevData.success && prevData.preview?.audioUrl) {
+              const audio = new Audio(prevData.preview.audioUrl);
+              audio.play();
+            }
+          } catch (e) {
+            alert(`Gagal memutar sampel: ${e.message}`);
+          } finally {
+            btn.disabled = false;
+            btn.textContent = "\u{1F50A} Tes";
+          }
+        });
+      });
+      customVoiceListContainer.querySelectorAll(".btn-del-clone-voice").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const voiceId = btn.getAttribute("data-voice-id");
+          if (!confirm("Hapus custom voice ini dari studio?")) return;
+          btn.disabled = true;
+          try {
+            const delRes = await fetch(`/api/tts/custom-voice/${encodeURIComponent(voiceId)}?provider=elevenlabs`, {
+              method: "DELETE"
+            });
+            const delData = await delRes.json();
+            if (!delRes.ok || !delData.success) {
+              throw new Error(delData.error || "Gagal menghapus custom voice.");
+            }
+            showToast("Custom voice berhasil dihapus.");
+            await loadAvailableTtsProviders();
+            loadCustomVoiceList();
+          } catch (e) {
+            alert(e.message);
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      });
+    } catch (err) {
+      customVoiceListContainer.innerHTML = `<div style="font-size: 11px; color: #ef4444;">Gagal memuat: ${err.message}</div>`;
+    }
+  }
+  function handleCloneSampleFile(file) {
+    if (!file) return;
+    const allowed = [".mp3", ".wav", ".ogg", ".m4a"];
+    const ext = "." + file.name.split(".").pop().toLowerCase();
+    if (!allowed.includes(ext)) {
+      alert("Format audio tidak didukung. Harap gunakan file MP3, WAV, OGG, atau M4A.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Ukuran file audio melebihi batas 10MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const base64Index = dataUrl.indexOf(";base64,");
+      if (base64Index !== -1) {
+        cloneAudioSampleBase64 = dataUrl.substring(base64Index + 8);
+        cloneAudioSampleMimeType = file.type || "audio/mpeg";
+        if (lblCloneAudioFile) {
+          lblCloneAudioFile.textContent = `\u2713 ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+  function bindVoiceCloneEvents() {
+    if (btnOpenCloneModal) {
+      btnOpenCloneModal.addEventListener("click", () => openVoiceCloneModal());
+    }
+    if (btnCloseCloneModal) {
+      btnCloseCloneModal.addEventListener("click", () => closeVoiceCloneModal());
+    }
+    if (btnCancelCloneModal) {
+      btnCancelCloneModal.addEventListener("click", () => closeVoiceCloneModal());
+    }
+    if (dropZoneCloneAudio && fileCloneAudioSample) {
+      dropZoneCloneAudio.addEventListener("click", () => fileCloneAudioSample.click());
+      fileCloneAudioSample.addEventListener("change", (e) => {
+        if (e.target.files && e.target.files[0]) {
+          handleCloneSampleFile(e.target.files[0]);
+        }
+      });
+      dropZoneCloneAudio.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZoneCloneAudio.style.borderColor = "#f0a500";
+      });
+      dropZoneCloneAudio.addEventListener("dragleave", (e) => {
+        e.preventDefault();
+        dropZoneCloneAudio.style.borderColor = "var(--border-color)";
+      });
+      dropZoneCloneAudio.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZoneCloneAudio.style.borderColor = "var(--border-color)";
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handleCloneSampleFile(e.dataTransfer.files[0]);
+        }
+      });
+    }
+    if (btnSubmitVoiceClone) {
+      btnSubmitVoiceClone.addEventListener("click", async () => {
+        const name = inpCloneVoiceName ? inpCloneVoiceName.value.trim() : "";
+        const description = inpCloneVoiceDesc ? inpCloneVoiceDesc.value.trim() : "";
+        const speakerName = inpCloneSpeakerName ? inpCloneSpeakerName.value.trim() : "";
+        const consentAgreed = chkCloneConsent ? chkCloneConsent.checked : false;
+        if (!name) {
+          alert("Nama karakter custom voice wajib diisi.");
+          if (inpCloneVoiceName) inpCloneVoiceName.focus();
+          return;
+        }
+        if (!speakerName) {
+          alert("Nama pemilik suara asli wajib diisi untuk kepatuhan dan audit hak cipta.");
+          if (inpCloneSpeakerName) inpCloneSpeakerName.focus();
+          return;
+        }
+        if (!consentAgreed) {
+          alert("Deklarasi persetujuan hak cipta dan izin pemilik suara wajib dicentang sebelum melanjutkan.");
+          if (chkCloneConsent) chkCloneConsent.focus();
+          return;
+        }
+        if (!cloneAudioSampleBase64) {
+          alert("Harap pilih atau seret file sampel rekaman suara terlebih dahulu.");
+          return;
+        }
+        btnSubmitVoiceClone.disabled = true;
+        if (cloneProgressNotice) cloneProgressNotice.style.display = "block";
+        try {
+          const res = await fetch("/api/tts/custom-voice", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name,
+              description,
+              speakerName,
+              consentAgreed: true,
+              rightsConfirmed: true,
+              audioBase64: cloneAudioSampleBase64,
+              audioMimeType: cloneAudioSampleMimeType,
+              providerId: "elevenlabs"
+            })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || "Gagal membuat custom voice.");
+          }
+          showToast(`Custom voice "${data.voice.name}" berhasil dibuat!`);
+          await loadAvailableTtsProviders();
+          if (selVoVoice && data.voice?.id) {
+            selVoVoice.value = data.voice.id;
+            const scene = getActiveScene();
+            if (scene) {
+              if (!scene.voiceover) scene.voiceover = { enabled: true };
+              scene.voiceover.voiceId = data.voice.id;
+              scene.voiceover.isCustomVoice = true;
+              scene.voiceover.speakerName = speakerName;
+              debouncedHistoryPush();
+            }
+          }
+          closeVoiceCloneModal();
+        } catch (err) {
+          alert(err.message);
+        } finally {
+          btnSubmitVoiceClone.disabled = false;
+          if (cloneProgressNotice) cloneProgressNotice.style.display = "none";
+        }
+      });
+    }
+  }
+  var generatedAiProject = null;
+  function openAiDirectorModal() {
+    if (aiDirectorModal) aiDirectorModal.style.display = "flex";
+    if (aiInputSection) aiInputSection.style.display = "flex";
+    if (aiLoadingSection) aiLoadingSection.style.display = "none";
+    if (aiResultSection) aiResultSection.style.display = "none";
+    if (btnRunAiGenerate) btnRunAiGenerate.style.display = "inline-flex";
+    if (btnApplyAiProject) btnApplyAiProject.style.display = "none";
+  }
+  function closeAiDirectorModal() {
+    if (aiDirectorModal) aiDirectorModal.style.display = "none";
+  }
+  if (btnOpenAiDirector) {
+    btnOpenAiDirector.addEventListener("click", openAiDirectorModal);
+  }
+  if (btnCloseAiModal) {
+    btnCloseAiModal.addEventListener("click", closeAiDirectorModal);
+  }
+  if (btnCancelAiModal) {
+    btnCancelAiModal.addEventListener("click", closeAiDirectorModal);
+  }
+  document.querySelectorAll(".ai-chip-prompt").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      if (aiPromptInput) {
+        aiPromptInput.value = chip.dataset.prompt || chip.textContent;
+      }
+    });
+  });
+  if (btnRunAiGenerate) {
+    btnRunAiGenerate.addEventListener("click", async () => {
+      const prompt = (aiPromptInput?.value || "").trim();
+      if (!prompt) {
+        alert("Silakan ketik instruksi atau pilih contoh prompt video terlebih dahulu.");
+        return;
+      }
+      const aspectRatio = aiAspectRatio?.value || "9:16";
+      const duration = Number(aiDuration?.value) || 30;
+      const preset = aiPreset?.value || "preset_b";
+      if (aiInputSection) aiInputSection.style.display = "none";
+      if (aiLoadingSection) aiLoadingSection.style.display = "flex";
+      if (btnRunAiGenerate) btnRunAiGenerate.style.display = "none";
+      try {
+        let result = null;
+        if (typeof fetch === "function") {
+          try {
+            const res = await fetch("/api/ai/generate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ prompt, aspectRatio, duration, preset })
+            });
+            if (res.ok) {
+              result = await res.json();
+            }
+          } catch (fetchErr) {
+          }
+        }
+        if (!result || !result.project) {
+          const fallbackProj = generateProjectWithHeuristic(prompt, { aspectRatio, duration, preset });
+          result = { success: true, project: fallbackProj };
+        }
+        generatedAiProject = result.project;
+        renderAiStoryboard(generatedAiProject);
+        if (aiLoadingSection) aiLoadingSection.style.display = "none";
+        if (aiResultSection) aiResultSection.style.display = "flex";
+        if (btnApplyAiProject) btnApplyAiProject.style.display = "inline-flex";
+      } catch (err) {
+        alert(`Gagal merancang proyek AI: ${err.message}`);
+        if (aiLoadingSection) aiLoadingSection.style.display = "none";
+        if (aiInputSection) aiInputSection.style.display = "flex";
+        if (btnRunAiGenerate) btnRunAiGenerate.style.display = "inline-flex";
+      }
+    });
+  }
+  function renderAiStoryboard(project) {
+    if (!project) return;
+    if (aiResultTitle) aiResultTitle.textContent = project.videoTitle || project.name || "Draft AI";
+    if (aiResultMeta) {
+      aiResultMeta.textContent = `${project.scenes.length} Adegan \u2022 Total ${project.totalDuration}s \u2022 Rasio ${project.aspectRatio} (${project.canvas.width}\xD7${project.canvas.height})`;
+    }
+    if (aiResultAudioBadge) {
+      const bgmName = getAudioAssetById(project.audio?.assetId)?.name || "Rock Anthem BGM";
+      aiResultAudioBadge.textContent = `\u{1F3B5} ${bgmName}`;
+    }
+    if (aiStoryboardCards) {
+      aiStoryboardCards.innerHTML = "";
+      project.scenes.forEach((sc) => {
+        const card = document.createElement("div");
+        card.className = "storyboard-card";
+        const assetTags = (sc.elements || []).map((el) => {
+          const aId = el.assetId || el.props?.componentId;
+          const name = getAssetById(aId)?.name || el.name || el.type;
+          return `<span class="storyboard-asset-tag">\u{1F3F7}\uFE0F ${escapeHTML2(name)}</span>`;
+        }).join("");
+        card.innerHTML = `
+        <div class="storyboard-header">
+          <span class="storyboard-title">Adegan ${sc.order}: ${escapeHTML2(sc.title || sc.name)}</span>
+          <span class="storyboard-duration">\u23F1\uFE0F ${sc.duration} detik</span>
+        </div>
+        <div class="storyboard-text">"${escapeHTML2(sc.screenText || "")}"</div>
+        <div class="storyboard-narration">${escapeHTML2(sc.narration || "")}</div>
+        <div class="storyboard-assets">${assetTags || '<span style="font-size: 10px; color: var(--text-muted);">Tipografi & Grafis Standar</span>'}</div>
+      `;
+        aiStoryboardCards.appendChild(card);
+      });
+    }
+  }
+  if (btnApplyAiProject) {
+    btnApplyAiProject.addEventListener("click", () => {
+      if (!generatedAiProject) return;
+      history.push(appProject);
+      appProject = generatedAiProject;
+      selectedSceneId = appProject.scenes[0]?.id || "sc_1";
+      selectedElementId = null;
+      closeAiDirectorModal();
+      renderAll();
+      showToast(`Proyek AI "${appProject.videoTitle}" berhasil dimuat ke editor!`);
+    });
+  }
+  function openAiRevisionModal() {
+    if (aiRevisionModal) aiRevisionModal.style.display = "flex";
+    if (aiRevTargetScene) {
+      aiRevTargetScene.innerHTML = `<option value="auto">Deteksi Otomatis dari Instruksi</option>`;
+      appProject.scenes.forEach((sc) => {
+        const opt = document.createElement("option");
+        opt.value = sc.id;
+        opt.textContent = `Adegan ${sc.order}: ${sc.title || sc.name}`;
+        if (sc.id === selectedSceneId) opt.selected = true;
+        aiRevTargetScene.appendChild(opt);
+      });
+    }
+  }
+  function closeAiRevisionModal() {
+    if (aiRevisionModal) aiRevisionModal.style.display = "none";
+  }
+  if (btnOpenAiRevision) {
+    btnOpenAiRevision.addEventListener("click", openAiRevisionModal);
+  }
+  if (btnCloseAiRevModal) {
+    btnCloseAiRevModal.addEventListener("click", closeAiRevisionModal);
+  }
+  if (btnCancelAiRevModal) {
+    btnCancelAiRevModal.addEventListener("click", closeAiRevisionModal);
+  }
+  document.querySelectorAll(".ai-rev-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      if (aiRevPromptInput) {
+        aiRevPromptInput.value = chip.dataset.prompt || chip.textContent;
+      }
+    });
+  });
+  if (btnApplyAiRevision) {
+    btnApplyAiRevision.addEventListener("click", async () => {
+      const revisionPrompt = (aiRevPromptInput?.value || "").trim();
+      if (!revisionPrompt) {
+        alert("Ketik instruksi revisi terlebih dahulu.");
+        return;
+      }
+      const targetSceneVal = aiRevTargetScene?.value === "auto" ? null : aiRevTargetScene?.value;
+      try {
+        let result = null;
+        if (typeof fetch === "function") {
+          try {
+            const res = await fetch("/api/ai/revise", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                project: appProject,
+                revisionPrompt,
+                targetSceneId: targetSceneVal
+              })
+            });
+            if (res.ok) {
+              result = await res.json();
+            }
+          } catch (fetchErr) {
+          }
+        }
+        if (!result || !result.project) {
+          result = await reviseProjectWithAI(appProject, revisionPrompt, targetSceneVal);
+        }
+        if (result.success && result.project) {
+          history.push(appProject);
+          appProject = result.project;
+          renderAll();
+          closeAiRevisionModal();
+          showToast(result.summary || "Revisi AI berhasil diterapkan!");
+        }
+      } catch (err) {
+        alert(`Gagal merevisi adegan: ${err.message}`);
+      }
+    });
+  }
+  if (btnDownloadJson) {
+    btnDownloadJson.addEventListener("click", () => {
+      downloadProjectJSON(appProject);
+      showToast("Unified Project JSON berhasil diunduh!");
+    });
+  }
+  if (btnDownloadHtml) {
+    btnDownloadHtml.addEventListener("click", () => {
+      downloadHTMLFile(appProject);
+      showToast("File HTML standalone berhasil diunduh!");
+    });
+  }
+  if (btnDownloadRenderPkg) {
+    btnDownloadRenderPkg.addEventListener("click", () => {
+      downloadRenderPackage(appProject);
+      showToast("Script render video MP4 berhasil diunduh!");
+    });
+  }
+  if (btnExportPrompt) {
+    btnExportPrompt.addEventListener("click", () => {
+      const promptText = generateStructuredPrompt(appProject);
+      if (promptCodeArea) promptCodeArea.value = promptText;
+      if (promptModal) promptModal.style.display = "flex";
+    });
+  }
+  if (btnCopyModalPrompt) {
+    btnCopyModalPrompt.addEventListener("click", () => {
+      if (promptCodeArea) {
+        navigator.clipboard.writeText(promptCodeArea.value).then(() => {
+          showToast("Prompt berhasil disalin ke clipboard!");
+          if (promptModal) promptModal.style.display = "none";
+        });
+      }
+    });
+  }
+  if (btnCloseModal) {
+    btnCloseModal.addEventListener("click", () => {
+      if (promptModal) promptModal.style.display = "none";
+    });
+  }
+  if (btnImportJson && fileImportJson) {
+    btnImportJson.addEventListener("click", () => {
+      fileImportJson.click();
+    });
+    fileImportJson.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const parsed = JSON.parse(event.target.result);
+          const validated = validateProject(parsed);
+          if (validated.valid) {
+            history.push(appProject);
+            appProject = validated.project;
+            selectedSceneId = appProject.scenes[0]?.id || "sc_1";
+            selectedElementId = null;
+            renderAll();
+            showToast(`Project "${appProject.name || appProject.videoTitle}" berhasil dimuat!`);
+          } else {
+            showToast(`File JSON tidak valid: ${validated.errors.join(", ")}`);
+          }
+        } catch (err) {
+          showToast("Gagal membaca file JSON: Format tidak valid.");
+        }
+      };
+      reader.readAsText(file);
+      fileImportJson.value = "";
+    });
+  }
+  function initTheme() {
+    const savedTheme = localStorage.getItem("mg_studio_theme") || "dark";
+    document.documentElement.setAttribute("data-theme", savedTheme);
+    updateThemeButtonUI(savedTheme);
+  }
+  function updateThemeButtonUI(theme) {
+    if (!themeToggleBtn) return;
+    themeToggleBtn.textContent = theme === "light" ? "\u263E Gelap" : "\u263C Terang";
+  }
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-theme") || "dark";
+      const target = current === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", target);
+      localStorage.setItem("mg_studio_theme", target);
+      updateThemeButtonUI(target);
     });
   }
   initTheme();
-  syncStateToForm();
-  compileAndRender();
+  loadTtsProviders();
+  bindConceptFormEvents();
+  bindInspectorEvents();
+  renderAll();
 })();

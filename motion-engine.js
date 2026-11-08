@@ -1,4 +1,7 @@
 import { GSAP_INLINE } from "./gsap-lib.js";
+import { validateProject, migrateLegacyTemplateToProject } from "./project-schema.js";
+import { renderSvgComponent } from "./shared-svg-library.js";
+import { getAssetById } from "./asset-library.js";
 
 function escapeHTML(str) {
   if (!str) return "";
@@ -15,26 +18,28 @@ function formatTime(sec) {
 }
 
 // Motion Graphic Compiler: Generates self-contained 1080x1920 9:16 Persib Media Motion Graphics
-export function generateMotionGraphicHTML(config) {
-  const {
-    id: tabId = "post_match",
-    topic = "Persib Bandung",
-    category = "Hasil Pertandingan",
-    angle = "",
-    audience = "Bobotoh",
-    goal = "Rayakan Kemenangan",
-    tone = "Bangga & Bersemangat",
-    preset = "preset_b",
-    colors = {
-      primary: "#003da5",
-      secondary: "#0a0a0a",
-      text: "#ffffff",
-      accent: "#f0a500"
-    },
-    duration = 30,
-    metaphor = "card",
-    scenes = []
-  } = config;
+// Supports both Unified Project JSON and legacy template configuration objects
+export function generateMotionGraphicHTML(input) {
+  // Normalize into Unified Project format
+  const project = (input && input.version && input.canvas)
+    ? validateProject(input).project
+    : migrateLegacyTemplateToProject(input);
+
+  const canvasWidth = project.canvas?.width || 1080;
+  const canvasHeight = project.canvas?.height || 1920;
+  const fps = project.fps || 30;
+  const tabId = project.metadata?.tabId || project.id || "post_match";
+  const topic = project.videoTitle || project.name || "Persib Motion";
+  const category = project.metadata?.category || "Hasil Pertandingan";
+  const preset = project.metadata?.preset || "preset_b";
+  const colors = project.theme?.colors || {
+    primary: "#003da5",
+    secondary: "#0a0a0a",
+    text: "#ffffff",
+    accent: "#f0a500"
+  };
+  const duration = project.totalDuration || 30;
+  const scenes = project.scenes || [];
 
   // Compute timing cues
   let totalCalculatedDuration = 0;
@@ -118,13 +123,13 @@ export function generateMotionGraphicHTML(config) {
       overflow: hidden;
     }
 
-    /* 1080x1920 Virtual Stage */
+    /* ${canvasWidth}x${canvasHeight} Virtual Stage */
     #stage-wrapper {
       position: absolute;
       top: 50%;
       left: 50%;
-      width: 1080px;
-      height: 1920px;
+      width: ${canvasWidth}px;
+      height: ${canvasHeight}px;
       transform-origin: center center;
       transform: translate(-50%, -50%) scale(0.2);
       box-shadow: 0 30px 80px -15px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(240, 165, 0, 0.25);
@@ -137,8 +142,8 @@ export function generateMotionGraphicHTML(config) {
       position: absolute;
       top: 0;
       left: 0;
-      width: 1080px;
-      height: 1920px;
+      width: ${canvasWidth}px;
+      height: ${canvasHeight}px;
       overflow: hidden;
       background: ${getBackgroundCSS(activeTabId, colors)};
     }
@@ -347,6 +352,23 @@ export function generateMotionGraphicHTML(config) {
       position: relative;
     }
 
+    .custom-scene-elements-stage {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 25;
+    }
+
+    .scene-custom-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .custom-scene-elem {
+      pointer-events: auto;
+    }
+
     /* Milestone Data Pill Card */
     .data-pill-card {
       position: absolute;
@@ -410,6 +432,7 @@ export function generateMotionGraphicHTML(config) {
       font-weight: 600;
       line-height: 1.35;
       color: #f1f5f9;
+      width: 100%;
     }
 
     .subtitle-text .kw-highlight {
@@ -417,6 +440,25 @@ export function generateMotionGraphicHTML(config) {
       font-weight: 800;
       text-decoration: underline;
       text-underline-offset: 6px;
+    }
+
+    /* Word-Level Karaoke Caption Styles (Phase 4B) */
+    .caption-word {
+      display: inline-block;
+      transition: color 0.08s ease, transform 0.08s ease, text-shadow 0.08s ease;
+      margin: 0 4px;
+      color: var(--caption-normal-color, #f1f5f9);
+    }
+
+    .caption-word.caption-word-active {
+      color: var(--caption-active-color, #f0a500) !important;
+      font-weight: 800 !important;
+      transform: scale(1.08);
+      text-shadow: var(--caption-active-glow, 0 0 16px rgba(240, 165, 0, 0.75)) !important;
+    }
+
+    .caption-word.caption-word-spoken {
+      color: var(--caption-spoken-color, rgba(241, 245, 249, 0.7));
     }
 
     /* Footer Safe Zone */
@@ -570,6 +612,10 @@ export function generateMotionGraphicHTML(config) {
           <div class="theme-stage-container">
             ${renderThemeVisualStage(activeTabId, colors, preset)}
           </div>
+          <!-- Dynamic Scene Custom Elements Layer -->
+          <div class="custom-scene-elements-stage" id="customSceneElementsStage">
+            ${renderProjectCustomElementsHTML(computedScenes, colors)}
+          </div>
         </main>
 
         <!-- Data Value Milestone Card -->
@@ -616,17 +662,28 @@ export function generateMotionGraphicHTML(config) {
     <!-- Record Mode Countdown Overlay -->
     <div id="record-overlay">
       <div id="record-count">3</div>
-      <div style="font-size: 26px; margin-top: 16px; color: #d1d5db;">Mempersiapkan Rekaman Layar 1080x1920...</div>
+      <div style="font-size: 26px; margin-top: 16px; color: #d1d5db;">Mempersiapkan Rekaman Layar ${canvasWidth}x${canvasHeight}...</div>
     </div>
+    ${project.audio?.enabled && project.audio?.bgmUrl ? `<audio id="bgmAudio" src="${escapeHTML(project.audio.bgmUrl)}" preload="auto" style="display:none;"></audio>` : ""}
+    ${(project.scenes || []).map((s, sIdx) => {
+      if (s.voiceover?.enabled && s.voiceover?.audioUrl) {
+        return `<audio id="vo_audio_${sIdx}" class="vo-audio-elem" data-scene-idx="${sIdx}" data-start-time="${s.startTime || 0}" data-duration="${s.duration || 0}" src="${escapeHTML(s.voiceover.audioUrl)}" preload="auto" style="display:none;"></audio>`;
+      }
+      return "";
+    }).filter(Boolean).join("\n    ")}
   </div>
 
   <script>
+    // Unified Project JSON (Single source of truth)
+    window.PROJECT = ${JSON.stringify(project)};
+
     // Master Config & Timing CUES
     const CUES = {
       tabId: "${activeTabId}",
       duration: ${finalDuration},
       scenes: ${serializedScenes},
-      colors: ${serializedColors}
+      colors: ${serializedColors},
+      audio: ${JSON.stringify(project.audio || { enabled: false, bgmUrl: "", volume: 0.8, muted: false, startPosition: 0 })}
     };
 
     window.DURATION = CUES.duration;
@@ -660,8 +717,8 @@ export function generateMotionGraphicHTML(config) {
     function resizeStage() {
       const containerWidth = window.innerWidth;
       const containerHeight = window.innerHeight;
-      const stageW = 1080;
-      const stageH = 1920;
+      const stageW = ${canvasWidth};
+      const stageH = ${canvasHeight};
 
       const isStandalone = (window.self === window.top);
       const paddingBottom = isStandalone ? 75 : 0;
@@ -719,6 +776,14 @@ export function generateMotionGraphicHTML(config) {
           timeDisplay.textContent = formatTime(t) + " / " + formatTime(CUES.duration);
           progressFill.style.width = (t / CUES.duration * 100) + "%";
 
+          if (typeof syncVoiceovers === "function") {
+            syncVoiceovers(t, isPlaying);
+          }
+
+          if (typeof syncCaptions === "function") {
+            syncCaptions(t);
+          }
+
           if (window.parent && window.parent !== window) {
             try {
               window.parent.postMessage({
@@ -732,6 +797,10 @@ export function generateMotionGraphicHTML(config) {
         },
         onComplete: function() {
           isPlaying = false;
+          if (bgmAudio) bgmAudio.pause();
+          if (typeof syncVoiceovers === "function") {
+            syncVoiceovers(CUES.duration, false);
+          }
           iconPlay.textContent = "▶ Putar";
           if (window.parent && window.parent !== window) {
             try {
@@ -766,7 +835,7 @@ export function generateMotionGraphicHTML(config) {
           sceneBadgeNum.textContent = String(sc.idx).padStart(2, "0");
           sceneBadgeTitle.textContent = sc.title || ("ADEGAN " + sc.idx);
           setHeadlineText(sc.screenText, sc.highlightWord);
-          subtitleText.innerHTML = highlightSubtitle(sc.narration, sc.highlightWord);
+          renderSceneCaptions(sc);
 
           if (sc.dataValue && sc.dataValue.trim() !== "") {
             dataValText.textContent = sc.dataValue;
@@ -787,6 +856,32 @@ export function generateMotionGraphicHTML(config) {
 
         // Choreograph theme-specific graphics per scene
         choreographThemeScene(CUES.tabId, sceneTL, sc.idx, sc.duration);
+
+        // Choreograph custom elements for this scene
+        const customLayer = document.getElementById("scene_custom_" + sc.id);
+        sceneTL.add(function() {
+          document.querySelectorAll(".scene-custom-layer").forEach(function(l) {
+            l.style.display = "none";
+          });
+          if (customLayer) customLayer.style.display = "block";
+        }, 0);
+
+        (sc.elements || []).forEach(function(el) {
+          const elDom = document.getElementById("el_" + el.id);
+          if (!elDom) return;
+          const anim = el.animation || { type: "none" };
+          const animDur = anim.duration || 0.5;
+          const animDelay = anim.delay || 0;
+          if (anim.type === "fade") {
+            sceneTL.fromTo(elDom, { opacity: 0 }, { opacity: el.opacity !== undefined ? el.opacity : 1, duration: animDur, ease: anim.easing || "power2.out" }, animDelay);
+          } else if (anim.type === "slide") {
+            sceneTL.fromTo(elDom, { y: 60, opacity: 0 }, { y: 0, opacity: el.opacity !== undefined ? el.opacity : 1, duration: animDur, ease: anim.easing || "power2.out" }, animDelay);
+          } else if (anim.type === "scale") {
+            sceneTL.fromTo(elDom, { scale: 0.5, opacity: 0 }, { scale: el.scale || 1, opacity: el.opacity !== undefined ? el.opacity : 1, duration: animDur, ease: anim.easing || "back.out(1.5)" }, animDelay);
+          } else if (anim.type === "rotate") {
+            sceneTL.fromTo(elDom, { rotation: -30, opacity: 0 }, { rotation: el.rotation || 0, opacity: el.opacity !== undefined ? el.opacity : 1, duration: animDur, ease: anim.easing || "power2.out" }, animDelay);
+          }
+        });
 
         masterTimeline.add(sceneTL, sc.start);
       });
@@ -919,6 +1014,96 @@ export function generateMotionGraphicHTML(config) {
       return safe;
     }
 
+    const subtitleBox = document.getElementById("subtitleBox");
+
+    function renderSceneCaptions(sc) {
+      if (!subtitleText) return;
+      const captions = sc.captions;
+
+      if (captions && captions.enabled && Array.isArray(captions.segments) && captions.segments.length > 0) {
+        if (subtitleBox) {
+          subtitleBox.style.display = "flex";
+          if (captions.style?.backgroundColor) subtitleBox.style.backgroundColor = captions.style.backgroundColor;
+        }
+
+        subtitleText.innerHTML = "";
+        subtitleText.style.fontSize = (captions.style?.fontSize || 34) + "px";
+        subtitleText.style.textAlign = captions.style?.textAlign || "center";
+        subtitleText.style.color = captions.style?.textColor || "#ffffff";
+
+        subtitleText.dataset.hasCaptions = "true";
+        subtitleText.dataset.sceneStart = String(sc.start || 0);
+
+        captions.segments.forEach(function(seg, segIdx) {
+          const segSpan = document.createElement("span");
+          segSpan.className = "caption-segment";
+          segSpan.id = "caption_seg_" + sc.idx + "_" + segIdx;
+          segSpan.dataset.start = String(seg.start);
+          segSpan.dataset.end = String(seg.end);
+          segSpan.style.display = segIdx === 0 ? "inline" : "none";
+
+          (seg.words || []).forEach(function(w) {
+            const wordSpan = document.createElement("span");
+            wordSpan.className = "caption-word";
+            wordSpan.dataset.start = String(w.start);
+            wordSpan.dataset.end = String(w.end);
+            wordSpan.dataset.word = w.word;
+            wordSpan.textContent = w.word + " ";
+            segSpan.appendChild(wordSpan);
+          });
+
+          subtitleText.appendChild(segSpan);
+        });
+      } else if (sc.narration && sc.narration.trim()) {
+        if (subtitleBox) {
+          subtitleBox.style.display = "flex";
+          subtitleBox.style.backgroundColor = "rgba(10, 14, 24, 0.88)";
+        }
+        subtitleText.dataset.hasCaptions = "false";
+        subtitleText.innerHTML = highlightSubtitle(sc.narration, sc.highlightWord);
+      } else {
+        if (subtitleBox) subtitleBox.style.display = "none";
+        subtitleText.dataset.hasCaptions = "false";
+        subtitleText.innerHTML = "";
+      }
+    }
+
+    function syncCaptions(currentTime) {
+      if (!subtitleText || subtitleText.dataset.hasCaptions !== "true") return;
+
+      const scStart = parseFloat(subtitleText.dataset.sceneStart || 0);
+      const relTime = Math.max(0, currentTime - scStart);
+
+      const segments = subtitleText.querySelectorAll(".caption-segment");
+      segments.forEach(function(seg) {
+        const segStart = parseFloat(seg.dataset.start || 0);
+        const segEnd = parseFloat(seg.dataset.end || 0);
+
+        if (relTime >= segStart - 0.25 && relTime <= segEnd + 0.35) {
+          seg.style.display = "inline";
+        } else if (segments.length > 1) {
+          seg.style.display = "none";
+        }
+
+        const words = seg.querySelectorAll(".caption-word");
+        words.forEach(function(w) {
+          const wStart = parseFloat(w.dataset.start || 0);
+          const wEnd = parseFloat(w.dataset.end || 0);
+
+          if (relTime >= wStart && relTime <= wEnd) {
+            w.classList.add("caption-word-active");
+            w.classList.remove("caption-word-spoken");
+          } else if (relTime > wEnd) {
+            w.classList.remove("caption-word-active");
+            w.classList.add("caption-word-spoken");
+          } else {
+            w.classList.remove("caption-word-active");
+            w.classList.remove("caption-word-spoken");
+          }
+        });
+      });
+    }
+
     function escapeHTML(str) {
       if (!str) return "";
       return String(str).replace(/[&<>'"]/g, function(tag) {
@@ -938,30 +1123,77 @@ export function generateMotionGraphicHTML(config) {
     }
 
     // Playback APIs
+    const bgmAudio = document.getElementById("bgmAudio");
+    const voElements = Array.from(document.querySelectorAll(".vo-audio-elem"));
+
+    if (bgmAudio) {
+      bgmAudio.volume = CUES.audio.muted ? 0 : (CUES.audio.volume !== undefined ? CUES.audio.volume : 0.8);
+      bgmAudio.muted = Boolean(CUES.audio.muted);
+    }
+
+    function syncVoiceovers(currentTime, shouldPlay) {
+      voElements.forEach(function(vo) {
+        const start = parseFloat(vo.getAttribute("data-start-time") || 0);
+        const dur = parseFloat(vo.getAttribute("data-duration") || 0);
+        const end = start + dur;
+
+        if (currentTime >= start && currentTime < end) {
+          const offset = Math.max(0, currentTime - start);
+          if (Math.abs(vo.currentTime - offset) > 0.3) {
+            try { vo.currentTime = offset; } catch (err) {}
+          }
+          vo.playbackRate = currentSpeed;
+          if (shouldPlay) {
+            vo.play().catch(function() {});
+          } else {
+            vo.pause();
+          }
+        } else {
+          vo.pause();
+          try { vo.currentTime = 0; } catch (err) {}
+        }
+      });
+    }
+
     window.play = function() {
       if (!masterTimeline) return;
       masterTimeline.play();
+      if (bgmAudio) bgmAudio.play().catch(function() {});
       isPlaying = true;
+      syncVoiceovers(masterTimeline.time(), true);
       iconPlay.textContent = "❚❚ Jeda";
     };
 
     window.pause = function() {
       if (!masterTimeline) return;
       masterTimeline.pause();
+      if (bgmAudio) bgmAudio.pause();
       isPlaying = false;
+      syncVoiceovers(masterTimeline.time(), false);
       iconPlay.textContent = "▶ Putar";
     };
 
     window.restart = function() {
       if (!masterTimeline) return;
       masterTimeline.restart();
+      if (bgmAudio) {
+        bgmAudio.currentTime = CUES.audio.startPosition || 0;
+        bgmAudio.play().catch(function() {});
+      }
       isPlaying = true;
+      syncVoiceovers(0, true);
+      syncCaptions(0);
       iconPlay.textContent = "❚❚ Jeda";
     };
 
     window.seek = function(seconds) {
       if (!masterTimeline) return;
       masterTimeline.seek(seconds);
+      if (bgmAudio) {
+        bgmAudio.currentTime = (CUES.audio.startPosition || 0) + seconds;
+      }
+      syncVoiceovers(seconds, isPlaying);
+      syncCaptions(seconds);
     };
 
     // Cross-window postMessage listener from parent studio
@@ -978,8 +1210,15 @@ export function generateMotionGraphicHTML(config) {
       } else if (e.data.type === "MG_SET_SPEED") {
         currentSpeed = e.data.speed;
         if (masterTimeline) masterTimeline.timeScale(currentSpeed);
+        if (bgmAudio) bgmAudio.playbackRate = currentSpeed;
+        voElements.forEach(function(vo) { vo.playbackRate = currentSpeed; });
       } else if (e.data.type === "MG_START_RECORD") {
         btnRecordMode.click();
+      } else if (e.data.type === "MG_SET_AUDIO_VOLUME" && bgmAudio) {
+        bgmAudio.volume = Math.max(0, Math.min(1, Number(e.data.volume) || 0));
+      } else if (e.data.type === "MG_SET_AUDIO_MUTED") {
+        if (bgmAudio) bgmAudio.muted = Boolean(e.data.muted);
+        voElements.forEach(function(vo) { vo.muted = Boolean(e.data.muted); });
       }
     });
 
@@ -1075,6 +1314,54 @@ function getBackgroundCSS(tabId, colors) {
     default:
       return `linear-gradient(145deg, ${blue} 0%, ${dark} 100%)`;
   }
+}
+
+// Render custom elements defined in Unified Project JSON
+function renderProjectCustomElementsHTML(scenes, colors) {
+  if (!Array.isArray(scenes)) return "";
+  return scenes.map((sc, scIdx) => {
+    const elements = sc.elements || [];
+    if (elements.length === 0) return "";
+    const items = elements.map(el => {
+      if (el.visible === false) return "";
+      const x = el.position?.x || 0;
+      const y = el.position?.y || 0;
+      const w = typeof el.size?.width === "number" ? `${el.size.width}px` : (el.size?.width || "auto");
+      const h = typeof el.size?.height === "number" ? `${el.size.height}px` : (el.size?.height || "auto");
+      const z = el.zIndex || 1;
+      const op = el.opacity !== undefined ? el.opacity : 1;
+      const rot = el.rotation || 0;
+      const scale = el.scale || 1;
+
+      let inner = "";
+      if (el.type === "image") {
+        if (!el.assetUrl) {
+          inner = `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed #ef4444;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;padding:8px;text-align:center;">
+            <span style="font-size:24px;">⚠️</span>
+            <span style="font-size:12px;font-weight:700;">Aset Hilang</span>
+            <span style="font-size:10px;opacity:0.8;word-break:break-all;">${escapeHTML(el.name || el.assetId || "Image")}</span>
+          </div>`;
+        } else {
+          inner = `<img src="${escapeHTML(el.assetUrl)}" alt="${escapeHTML(el.name || '')}" style="width:100%;height:100%;object-fit:${el.fitMode || 'contain'};border-radius:${el.styling?.borderRadius || 8}px;display:block;" />`;
+        }
+      } else if (el.type === "svg" || (el.type === "component" && (el.props?.componentId || el.assetId))) {
+        const compId = el.props?.componentId || el.assetId;
+        if (compId) {
+          inner = renderSvgComponent(compId, { ...el.styling, width: el.size?.width, height: el.size?.height });
+        } else if (el.content && el.content.includes("<svg")) {
+          inner = el.content;
+        }
+      } else if (el.type === "text" && el.content) {
+        inner = `<div style="font-family:${el.styling?.fontFamily || "'Inter', sans-serif"};font-size:${el.styling?.fontSize || 24}px;font-weight:${el.styling?.fontWeight || 400};color:${el.styling?.color || '#ffffff'};line-height:1.3;">${escapeHTML(el.content)}</div>`;
+      } else if (el.type === "logo") {
+        inner = `<img src="/public/logos/brand/logo.png" alt="Persib" style="width:100%;height:100%;object-fit:contain;" />`;
+      }
+
+      return `<div id="el_${el.id}" class="custom-scene-elem" style="position:absolute;left:${x}px;top:${y}px;width:${w};height:${h};z-index:${z};opacity:${op};transform:rotate(${rot}deg) scale(${scale});transform-origin:center center;">${inner}</div>`;
+    }).join("");
+
+    return `<div id="scene_custom_${sc.id}" class="scene-custom-layer" style="position:absolute;inset:0;pointer-events:none;${scIdx === 0 ? '' : 'display:none;'}">${items}</div>`;
+  }).join("");
 }
 
 // Render bespoke vector graphic layouts for each of the 5 tabs

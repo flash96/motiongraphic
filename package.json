@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "bundle": "esbuild app.js --bundle --outfile=app.bundle.js --format=iife",
+    "test": "node tests/unified-project.test.js && node tests/editor-enhancement.test.js && node tests/asset-library.test.js && node tests/ai-engine.test.js && node tests/tts-engine.test.js && node tests/voice-cloning.test.js",
     "studio": "npx remotion studio",
     "render": "npx remotion render",
     "build": "npx remotion render PostMatchRecap out/video.mp4",
