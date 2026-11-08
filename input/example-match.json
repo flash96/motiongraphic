@@ -1,0 +1,46 @@
+{
+  "template": "post-match-recap",
+  "match": {
+    "date": "2026-11-07",
+    "stadium": "Si Jalak Harupat",
+    "competition": "BRI Liga 1 2026/27",
+    "home": {
+      "name": "PERSIB",
+      "logo": "persib.png",
+      "score": 3
+    },
+    "away": {
+      "name": "PERSIJA",
+      "logo": "persija.png",
+      "score": 1
+    },
+    "stats": [
+      { "label": "Possession", "home": 58, "away": 42, "unit": "%" },
+      { "label": "Shots", "home": 14, "away": 8 },
+      { "label": "On Target", "home": 6, "away": 3 },
+      { "label": "Corners", "home": 7, "away": 4 },
+      { "label": "Fouls", "home": 12, "away": 15 }
+    ],
+    "motm": {
+      "name": "David da Silva",
+      "photo": "david-da-silva.png",
+      "rating": 8.5,
+      "goals": 2,
+      "assists": 0
+    },
+    "standings": {
+      "position": 2,
+      "points": 34,
+      "played": 15,
+      "won": 10,
+      "drawn": 4,
+      "lost": 1,
+      "gd": 18
+    }
+  },
+  "branding": {
+    "handle": "@persibmotion",
+    "tagline": "BANGGA JADI BOBOTOH"
+  }
+}
+
